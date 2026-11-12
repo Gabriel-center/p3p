@@ -1,0 +1,13 @@
+{
+  "name": "p3p",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --var DEBUG:1",
+    "deploy": "wrangler deploy",
+    "test:server": "node worker/test/server.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.0"
+  }
+}

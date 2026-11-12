@@ -1,0 +1,2 @@
+@bokuweb/zstd-wasm 0.0.27 — MIT License — https://github.com/bokuweb/zstd-wasm
+Zstandard — BSD License — https://github.com/facebook/zstd

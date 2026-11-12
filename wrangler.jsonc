@@ -1,0 +1,40 @@
+{
+  // Servidor do p3p: salas (Durable Objects), arquivos (R2) e credenciais TURN.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Fica na raiz do repositório para o deploy da Cloudflare funcionar com as opções padrão.
+  "name": "p3p",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2026-06-01",
+  "observability": { "enabled": true },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "Room" },
+      { "name": "USAGE", "class_name": "Usage" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Room", "Usage"] }
+  ],
+
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "p3p-files" }
+  ],
+
+  "vars": {
+    // Sites que podem usar este servidor (separados por vírgula).
+    "ALLOWED_ORIGINS": "https://gabriel-center.github.io,http://localhost:8788,http://127.0.0.1:8788",
+    "MAX_PEERS": "8",
+    "MAX_FILE_BYTES": "2147483648",
+    "MAX_ROOM_BYTES": "5368709120",
+    "MAX_CLOUD_BYTES": "10200547328",
+    "FILE_TTL_HOURS": "48",
+    "MESSAGE_LIMIT": "200",
+    "PART_SIZE": "8388608"
+  }
+
+  // Secrets (configure no painel da Cloudflare, nunca neste arquivo):
+  //   TURN_KEY_ID, TURN_KEY_API_TOKEN  -> relay TURN
+  //   ADMIN_PASSWORD                   -> senha do "Apagar tudo" (padrão: admin)
+  //   CF_ACCOUNT_ID, CF_API_TOKEN      -> painel de uso (token com "Account Analytics: Read")
+}

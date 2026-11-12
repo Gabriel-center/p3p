@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Redirecionando</title>
+  <script>
+    // GitHub Pages: /p2p/sala01 (sem "?") cai aqui. Redireciona para /p2p/?sala01.
+    (function () {
+      var parts = location.pathname.split('/').filter(Boolean);
+      var base = '/' + (parts[0] || '') + '/';
+      var room = parts.slice(1).join('-');
+      location.replace(base + (room ? '?' + room : '') + location.hash);
+    })();
+  </script>
+</head>
+<body></body>
+</html>

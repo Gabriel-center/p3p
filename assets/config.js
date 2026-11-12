@@ -1,0 +1,24 @@
+// Nome do app e onde está o servidor.
+// O nome vem da pasta do site no GitHub Pages: /p3p/ → "p3p", com o servidor em p3p.gabriel-center.workers.dev.
+// Assim o mesmo código serve o p2p e o p3p, cada um com o seu servidor.
+const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+const folder = (location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
+
+export const APP = !local && /^[a-z0-9-]{2,32}$/.test(folder) && !folder.includes('.') ? folder : 'p3p';
+
+export const WORKER_URL = (window.P2P_WORKER_URL || (local
+  ? `http://${location.hostname}:8787`
+  : `https://${APP}.gabriel-center.workers.dev`)).replace(/\/+$/, '');
+
+export const WS_URL = WORKER_URL.replace(/^http/, 'ws');
+
+/** Endereço da página sem a sala, por exemplo https://gabriel-center.github.io/p3p/ */
+export const PAGE_URL = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}`;
+
+/** Prefixo das chaves guardadas no navegador, para o p2p e o p3p não se misturarem. */
+export const KEY = APP;
+
+export const BLOCK_SIZE = 1024 * 1024;       // blocos de 1 MB nas transferências diretas
+export const FRAME_SIZE = 64 * 1024 - 16;    // pedaço máximo por mensagem do WebRTC
+export const CONNECT_TIMEOUT_MS = 20000;      // sem conexão direta depois disso, usa a nuvem
+export const CLOUD_SWITCH_MS = 60000;         // transferência parada há 60 s vai para a nuvem
