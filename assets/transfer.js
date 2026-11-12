@@ -2,9 +2,9 @@
 // Formato de cada pedaço binário (16 bytes de cabeçalho + dados):
 //   [0] 0xB1  [1] flags (1 = comprimido)  [2..3] pedaço  [4..7] nº da transferência
 //   [8..11] bloco  [12..13] total de pedaços do bloco  [14..15] reservado
-import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js';
-import { createSink } from './storage.js';
-import { randomId } from './device.js';
+import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611121948';
+import { createSink } from './storage.js?v=202611121948';
+import { randomId } from './device.js?v=202611121948';
 
 const HIGH_WATER = 8 * 1024 * 1024;
 const PREFETCH = 3;

@@ -1,5 +1,5 @@
 // Histórico local (IndexedDB). Nunca sai deste navegador.
-import { KEY } from './config.js';
+import { KEY } from './config.js?v=202611121948';
 const DB = `${KEY}-history`;
 const MAX_EVENTS = 5000;
 let dbp = null;

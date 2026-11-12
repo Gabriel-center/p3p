@@ -88,3 +88,7 @@ Os valores ficam em `wrangler.jsonc`.
 
 - `assets/vendor/zstd`: @bokuweb/zstd-wasm (MIT) e Zstandard (BSD)
 - `assets/vendor/qrcode`: qrcode-generator (MIT)
+
+## Atualizar o site
+
+O GitHub Pages deixa os arquivos no cache do navegador por até 10 minutos. Antes de cada commit que muda o site, rode `npm run stamp`: ele carimba uma versão nos endereços dos arquivos, e quem abrir o site recebe a versão nova na hora.

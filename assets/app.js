@@ -1,14 +1,14 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js';
-import { RoomClient } from './room-client.js';
-import { Mesh } from './mesh.js';
-import { Codec, Transfers } from './transfer.js';
-import { CloudUpload, downloadUrl } from './cloud.js';
-import { cleanupOld } from './storage.js';
-import { SpeedMeter } from './speed.js';
-import * as hist from './history.js';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611121948';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611121948';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611121948';
+import { RoomClient } from './room-client.js?v=202611121948';
+import { Mesh } from './mesh.js?v=202611121948';
+import { Codec, Transfers } from './transfer.js?v=202611121948';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611121948';
+import { cleanupOld } from './storage.js?v=202611121948';
+import { SpeedMeter } from './speed.js?v=202611121948';
+import * as hist from './history.js?v=202611121948';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
