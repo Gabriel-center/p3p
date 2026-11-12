@@ -43,7 +43,7 @@ Settings → Pages → Source: *Deploy from a branch* → Branch `main`, pasta `
 | `CF_ACCOUNT_ID` | ID da conta, para o painel de uso | Opcional |
 | `CF_API_TOKEN` | Token com permissão *Account Analytics: Read* | Opcional |
 
-O endereço do servidor fica `https://p3p.gabriel-center.workers.dev`. O site descobre sozinho: o nome da pasta no GitHub Pages (`/p3p/`) vira o nome do Worker (`assets/config.js`). O mesmo código serve o p2p e o p3p, cada um com seu servidor.
+Por enquanto o p3p usa o servidor do p2p (`https://p2p.gabriel-center.workers.dev`), definido em `SERVER` no `assets/config.js`. Para ter um servidor só dele, publique o Worker `p3p` com os passos acima e troque `SERVER` por `APP`.
 
 Sem `CF_ACCOUNT_ID` e `CF_API_TOKEN`, o painel de uso mostra o espaço ocupado e uma estimativa das operações. Com eles, mostra os números reais da Cloudflare: requisições do dia, operações do R2 e tráfego TURN do mês.
 

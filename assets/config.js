@@ -6,9 +6,13 @@ const folder = (location.pathname.split('/').filter(Boolean)[0] || '').toLowerCa
 
 export const APP = !local && /^[a-z0-9-]{2,32}$/.test(folder) && !folder.includes('.') ? folder : 'p3p';
 
+// O p3p usa o mesmo servidor do p2p (já configurado, com TURN e nuvem).
+// Para ter um servidor só dele, troque 'p2p' por APP e publique o Worker "p3p".
+const SERVER = 'p2p';
+
 export const WORKER_URL = (window.P2P_WORKER_URL || (local
   ? `http://${location.hostname}:8787`
-  : `https://${APP}.gabriel-center.workers.dev`)).replace(/\/+$/, '');
+  : `https://${SERVER}.gabriel-center.workers.dev`)).replace(/\/+$/, '');
 
 export const WS_URL = WORKER_URL.replace(/^http/, 'ws');
 
