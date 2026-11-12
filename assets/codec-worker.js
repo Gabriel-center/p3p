@@ -32,6 +32,7 @@ self.onmessage = async ({ data }) => {
       return;
     }
     const input = new Uint8Array(data.buf);
+    const t0 = performance.now();
     let out;
     if (op === 'compress') {
       if (data.codec === 'zstd') { await zstdReady; out = zstd.compress(input, data.level || 3); }
@@ -43,7 +44,8 @@ self.onmessage = async ({ data }) => {
       throw new Error('operação desconhecida');
     }
     const copy = out.byteOffset === 0 && out.byteLength === out.buffer.byteLength ? out : out.slice();
-    self.postMessage({ id, buf: copy.buffer }, [copy.buffer]);
+    // ms = tempo só desta operação, sem a fila: quem envia usa para escolher o nível.
+    self.postMessage({ id, buf: copy.buffer, ms: performance.now() - t0 }, [copy.buffer]);
   } catch (e) {
     self.postMessage({ id, error: String(e && e.message || e) });
   }

@@ -1,5 +1,5 @@
 // Envio para a nuvem (R2) em partes de 8 MB, com gzip quando compensa e novas tentativas por parte.
-import { likelyCompressed } from './transfer.js?v=202611121948';
+import { likelyCompressed } from './transfer.js?v=202611122007';
 
 const PARALLEL = 3;
 const MAX_TRIES = 8;

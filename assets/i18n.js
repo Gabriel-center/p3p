@@ -120,7 +120,7 @@ const EN = {
   "Recebido pela nuvem. Fica disponível por 48 h.": "Received through the cloud. Available for 48 h.",
   "Sem conexão direta. Continuando pela nuvem.": "No direct connection. Continuing through the cloud.",
   "Mandar pela nuvem": "Send through the cloud",
-  'Aparência': 'Appearance', 'Automático': 'Automatic', 'Claro': 'Light', 'Escuro': 'Dark',
+  'nível {n}': 'level {n}', 'Aparência': 'Appearance', 'Automático': 'Automatic', 'Claro': 'Light', 'Escuro': 'Dark',
   'Tema: automático': 'Theme: automatic', 'Tema: claro': 'Theme: light', 'Tema: escuro': 'Theme: dark',
   'Escolha o arquivo para guardar': 'Choose a file to store', 'Copiado': 'Copied', 'Copiar': 'Copy'
 };

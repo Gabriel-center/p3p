@@ -14,7 +14,9 @@ https://gabriel-center.github.io/p3p/?sala01
   1. WebRTC direto entre os aparelhos (STUN)
   2. WebRTC pelo relay TURN da Cloudflare
   3. Nuvem: R2, bucket `p3p-files`
-- **Transferência direta:** blocos de 1 MB numerados, compressão Zstandard por bloco (nível 3, ou 6 no relay), com deflate como reserva. Retoma do último bloco confirmado quando a conexão cai.
+- **Transferência direta:** blocos numerados com compressão Zstandard por bloco, com deflate como reserva. Retoma do último bloco confirmado quando a conexão cai.
+  - **Nível automático:** começa no 3 (6 no relay). A cada segundo, compara a velocidade da rede com a da compressão: sobe de nível (6, 9, 12, 15, 19) quando a rede é o gargalo e o processador tem folga, e desce quando a compressão começa a segurar o envio. Em rede lenta, manda mais arquivo por segundo; em rede rápida, não atrasa nada.
+  - **Blocos de 8 MB:** em arquivos a partir de 24 MB, o site testa uma amostra do meio. Se o nível 9 com bloco grande render bem mais que o normal (arquivos com partes repetidas, como backups e imagens de disco), usa blocos de 8 MB. No teste, um backup passou de 59% para 85% de economia.
 - **Nuvem:** upload em partes de 8 MB, gzip quando compensa. O arquivo some 48 h depois do último acesso, e cada download renova o prazo.
 - **Presença:** quem perde a conexão fica "ausente" por 30 s antes de sair da sala. Uma queda rápida de rede ou recarregar a página não aparece para os outros. Sair pela seta de voltar avisa na hora.
 - **Histórico:** local, no IndexedDB do navegador. Nunca vai para o servidor.

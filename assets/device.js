@@ -1,5 +1,5 @@
 // Identidade deste aparelho: id fixo, nome editável e tipo (celular, tablet, computador).
-import { LANG } from './i18n.js?v=202611121948';
+import { LANG } from './i18n.js?v=202611122007';
 
 export function randomId(bytes = 12) {
   const a = crypto.getRandomValues(new Uint8Array(bytes));

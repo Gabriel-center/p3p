@@ -1,14 +1,14 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611121948';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611121948';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611121948';
-import { RoomClient } from './room-client.js?v=202611121948';
-import { Mesh } from './mesh.js?v=202611121948';
-import { Codec, Transfers } from './transfer.js?v=202611121948';
-import { CloudUpload, downloadUrl } from './cloud.js?v=202611121948';
-import { cleanupOld } from './storage.js?v=202611121948';
-import { SpeedMeter } from './speed.js?v=202611121948';
-import * as hist from './history.js?v=202611121948';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611122007';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611122007';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611122007';
+import { RoomClient } from './room-client.js?v=202611122007';
+import { Mesh } from './mesh.js?v=202611122007';
+import { Codec, Transfers } from './transfer.js?v=202611122007';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611122007';
+import { cleanupOld } from './storage.js?v=202611122007';
+import { SpeedMeter } from './speed.js?v=202611122007';
+import * as hist from './history.js?v=202611122007';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
@@ -1112,7 +1112,7 @@ class RoomView {
     const doneBytes = m.done;
     const note = () => {
       if (out) {
-        if (m.codec !== 'none' && m.raw) return t('Comprimido {p}%', { p: Math.max(0, Math.round((1 - m.ratio) * 100)) });
+        if (m.codec !== 'none' && m.raw) return `${t('Comprimido {p}%', { p: Math.max(0, Math.round((1 - m.ratio) * 100)) })}${m.codec === 'zstd' && m.usedLevel ? ` · ${t('nível {n}', { n: m.usedLevel })}` : ''}`;
         return m.alreadyCompressed ? t('Sem compressão, já compactado') : t('Sem compressão');
       }
       if (m.codec !== 'none' && m.wire && doneBytes) return t('Comprimido {p}%', { p: Math.max(0, Math.round((1 - m.wire / doneBytes) * 100)) });

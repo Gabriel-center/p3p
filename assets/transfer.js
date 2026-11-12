@@ -1,14 +1,24 @@
-// Transferência direta em blocos de 1 MB, com compressão por bloco e retomada.
+// Transferência direta em blocos (1 MB, ou 8 MB em arquivos grandes e comprimíveis), com compressão por bloco e retomada.
+// O nível do zstd se ajusta sozinho: sobe quando a rede é o gargalo e o processador tem folga, desce quando a compressão
+// começa a segurar o envio.
 // Formato de cada pedaço binário (16 bytes de cabeçalho + dados):
 //   [0] 0xB1  [1] flags (1 = comprimido)  [2..3] pedaço  [4..7] nº da transferência
 //   [8..11] bloco  [12..13] total de pedaços do bloco  [14..15] reservado
-import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611121948';
-import { createSink } from './storage.js?v=202611121948';
-import { randomId } from './device.js?v=202611121948';
+import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611122007';
+import { createSink } from './storage.js?v=202611122007';
+import { randomId } from './device.js?v=202611122007';
 
 const HIGH_WATER = 8 * 1024 * 1024;
 const PREFETCH = 3;
 const STALL_MS = 60000;
+// Blocos grandes dão ao zstd uma janela maior: em arquivos com partes repetidas (backups, bancos, imagens de disco)
+// a economia chega a triplicar. Só valem com nível 9 ou mais, que é quando a janela do zstd passa a cobrir o bloco.
+const BIG_BLOCK = 8 * 1024 * 1024;
+const BIG_MIN_SIZE = 24 * 1024 * 1024;
+const LEVELS = [3, 6, 9, 12, 15, 19];
+// Quantas vezes mais lento fica cada passo para o próximo nível (medido no zstd do site).
+const SLOWER = { 3: 3, 6: 2, 9: 2, 12: 2.5, 15: 3 };
+const BUSY_BYTES = 2 * 1024 * 1024;
 const SKIP_TYPES = /^(image\/(jpeg|png|gif|webp|avif|heic|heif)|video\/|audio\/(mpeg|mp4|aac|ogg|opus|webm|flac)|application\/(zip|gzip|x-7z|x-rar|x-xz|x-bzip|zstd|x-zstd|vnd\.rar|java-archive|x-apple-diskimage))/i;
 const SKIP_EXT = /\.(jpe?g|png|gif|webp|avif|heic|mp4|mov|mkv|webm|mp3|m4a|aac|ogg|opus|flac|zip|gz|tgz|7z|rar|xz|bz2|zst|br|jar|apk|ipa|dmg|docx|xlsx|pptx|odt|ods|epub)$/i;
 
@@ -40,7 +50,9 @@ export class Codec {
   async compress(u8, codec, level) {
     const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
     const d = await this.call('compress', { buf, codec, level }, [buf]);
-    return new Uint8Array(d.buf);
+    const out = new Uint8Array(d.buf);
+    out.ms = d.ms || 0;
+    return out;
   }
   async decompress(u8, codec) {
     const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
@@ -195,7 +207,7 @@ export class Transfers extends EventTarget {
 }
 
 // ---------- envio ----------
-class Outgoing {
+export class Outgoing {
   constructor(mgr, file, peerId, info) {
     this.mgr = mgr;
     this.dir = 'out';
@@ -225,6 +237,9 @@ class Outgoing {
     this.wireQueued = 0;      // bytes entregues ao canal (cumulativo)
     this.sentMap = [];        // blocos enviados: posição no arquivo e no fluxo da rede
     this.dc = null;
+    this.cpu = {};            // nível → bytes do arquivo comprimidos por segundo
+    this.levelAt = 0;
+    this.idleChecks = 0;
   }
 
   get done() { return Math.min(this.size, this.acked * this.blockSize); }
@@ -254,20 +269,51 @@ class Outgoing {
     const remote = this.mgr.mesh.remoteCaps(this.peerId)?.codecs || [];
     const common = ['zstd', 'deflate'].find(c => local.includes(c) && remote.includes(c));
     this.level = this.mgr.mesh.path(this.peerId) === 'relay' ? 6 : 3;
+    this.blockSize = BLOCK_SIZE;
     if (common && !likelyCompressed(this.file) && this.size > 4096) {
-      // Testa no primeiro bloco: se encolher menos de 8%, não vale a pena.
-      try {
-        const first = new Uint8Array(await this.file.slice(0, Math.min(this.size, BLOCK_SIZE)).arrayBuffer());
-        const c = await this.mgr.codec.compress(first, common, this.level);
-        if (c.byteLength < first.byteLength * 0.92) {
-          this.codec = common;
-          this.cache.set(0, Promise.resolve({ data: c, compressed: true, rawLen: first.byteLength }));
-        }
-      } catch { this.codec = 'none'; }
+      try { await this.probe(common); } catch { this.codec = 'none'; }
     }
+    this.blocks = Math.ceil(this.size / this.blockSize);
     this.compressionSkipped = this.codec === 'none';
     this.alreadyCompressed = likelyCompressed(this.file);
     this.sendOffer();
+  }
+
+  /**
+   * Decide se vale comprimir e com que tamanho de bloco, testando amostras do arquivo:
+   * - o primeiro 1 MB no nível atual (se encolher 8% ou mais, comprime);
+   * - em arquivos grandes, 8 MB do meio nos níveis 3 e 9. Se o 9 com bloco grande render bem mais,
+   *   o arquivo tem repetições longas (backup, banco, imagem de disco) e vale usar blocos de 8 MB.
+   */
+  async probe(codec) {
+    const cx = this.mgr.codec;
+    const first = new Uint8Array(await this.file.slice(0, Math.min(this.size, BLOCK_SIZE)).arrayBuffer());
+    const c = await cx.compress(first, codec, this.level);
+    if (c.ms) this.cpu[this.level] = first.byteLength / (c.ms / 1000);
+    const firstOk = c.byteLength < first.byteLength * 0.92;
+    if (codec === 'zstd' && this.size >= BIG_MIN_SIZE) {
+      const at = Math.floor((this.size - BIG_BLOCK) / 2 / BLOCK_SIZE) * BLOCK_SIZE;
+      const sample = new Uint8Array(await this.file.slice(at, at + BIG_BLOCK).arrayBuffer());
+      // Nível 3 enxerga ~2 MB para trás; nível 9 com bloco de 8 MB enxerga o bloco inteiro.
+      const small = await cx.compress(sample.slice(), codec, 3);
+      const big = await cx.compress(sample, codec, 9);
+      if (small.ms) this.cpu[3] = sample.byteLength / (small.ms / 1000);
+      if (big.ms) this.cpu[9] = sample.byteLength / (big.ms / 1000);
+      const smallRatio = small.byteLength / sample.byteLength;
+      const bigRatio = big.byteLength / sample.byteLength;
+      if (bigRatio < 0.92 && bigRatio < smallRatio * 0.75) {
+        this.codec = codec;
+        this.blockSize = BIG_BLOCK;
+        this.level = 9;
+        return;
+      }
+      if (smallRatio < 0.92 || firstOk) { this.codec = codec; return; }
+      return;
+    }
+    if (firstOk) {
+      this.codec = codec;
+      this.cache.set(0, Promise.resolve({ data: c, compressed: true, rawLen: first.byteLength, level: this.level }));
+    }
   }
 
   sendOffer() {
@@ -298,9 +344,14 @@ class Outgoing {
       const start = b * this.blockSize;
       const raw = new Uint8Array(await this.file.slice(start, Math.min(this.size, start + this.blockSize)).arrayBuffer());
       if (this.codec !== 'none') {
+        const level = this.level;
         try {
-          const c = await this.mgr.codec.compress(raw, this.codec, this.level);
-          if (c.byteLength < raw.byteLength * 0.97) return { data: c, compressed: true, rawLen: raw.byteLength };
+          const c = await this.mgr.codec.compress(raw, this.codec, level);
+          if (c.ms > 0) {
+            const rate = raw.byteLength / (c.ms / 1000);
+            this.cpu[level] = this.cpu[level] ? this.cpu[level] * 0.6 + rate * 0.4 : rate;
+          }
+          if (c.byteLength < raw.byteLength * 0.97) return { data: c, compressed: true, rawLen: raw.byteLength, level };
         } catch { /* manda sem compressão */ }
       }
       return { data: raw, compressed: false, rawLen: raw.byteLength };
@@ -323,6 +374,8 @@ class Outgoing {
       if (myRun !== this.run || this.state !== 'sending') return;
       if (dc.readyState !== 'open') { this.interrupt(); return; }
       const data = payload.data;
+      // Fila no canal no momento em que o próximo bloco ficou pronto: se ainda tem coisa, a rede é o gargalo.
+      const queued = dc.bufferedAmount;
       const frames = Math.max(1, Math.ceil(data.byteLength / FRAME_SIZE));
       const flags = payload.compressed ? 1 : 0;
       try {
@@ -339,7 +392,39 @@ class Outgoing {
       this.wireQueued += data.byteLength;
       this.raw += payload.rawLen;
       this.wire += data.byteLength;
+      if (payload.level) this.usedLevel = payload.level;
       this.next = b + 1;
+      this.tune(dc, queued);
+    }
+  }
+
+  /** Mede a rede a cada segundo e ajusta o nível de compressão. */
+  tune(dc, queued) {
+    if (this.codec !== 'zstd') return;
+    const now = performance.now();
+    const drained = this.wireQueued - dc.bufferedAmount;
+    if (!this.tuneAt) { this.tuneAt = now; this.tuneDrained = drained; return; }
+    const dt = (now - this.tuneAt) / 1000;
+    if (dt < 1) return;
+    const rate = (drained - this.tuneDrained) / dt;
+    // Com fila no canal, a rede é o gargalo e a medida é a velocidade real dela.
+    const busy = queued > BUSY_BYTES;
+    if (busy) this.netRate = this.netRate ? this.netRate * 0.6 + rate * 0.4 : rate;
+    this.tuneAt = now;
+    this.tuneDrained = drained;
+    const i = LEVELS.indexOf(this.level);
+    const cpu = this.cpu[this.level];
+    if (busy) {
+      this.idleChecks = 0;
+      const next = LEVELS[i + 1];
+      // Bytes do arquivo por segundo que a rede consegue levar com a compressão atual.
+      const need = this.netRate / Math.max(0.03, this.ratio);
+      if (next && cpu && cpu / SLOWER[this.level] > need * 1.6 && now - this.levelAt > 1500) { this.level = next; this.levelAt = now; }
+    } else if (i > 0 && ++this.idleChecks >= 2) {
+      // Canal vazio duas vezes seguidas: a compressão está segurando o envio.
+      this.idleChecks = 0;
+      this.level = LEVELS[i - 1];
+      this.levelAt = now;
     }
   }
 
@@ -460,7 +545,7 @@ class Incoming {
     this.size = Math.max(0, Number(m.size) || 0);
     this.type = String(m.type || '').slice(0, 120);
     this.blocks = Math.max(0, Number(m.blocks) || 0);
-    this.blockSize = Number(m.blockSize) || BLOCK_SIZE;
+    this.blockSize = Math.min(16 * 1024 * 1024, Number(m.blockSize) || BLOCK_SIZE);
     this.codec = ['zstd', 'deflate'].includes(m.codec) ? m.codec : 'none';
     this.written = 0;
     this.wire = 0;
