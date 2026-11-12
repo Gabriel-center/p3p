@@ -1,6 +1,6 @@
 // Nome do app e onde está o servidor.
-// O nome vem da pasta do site no GitHub Pages: /p3p/ → "p3p", com o servidor em p3p.gabriel-center.workers.dev.
-// Assim o mesmo código serve o p2p e o p3p, cada um com o seu servidor.
+// O nome vem da pasta do site no GitHub Pages: /p3p/ → "p3p". Ele aparece no título e separa
+// o que fica guardado no navegador; o servidor é escolhido em SERVER, logo abaixo.
 const local = ['localhost', '127.0.0.1'].includes(location.hostname);
 const folder = (location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
 
