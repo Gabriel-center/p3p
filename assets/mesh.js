@@ -1,7 +1,7 @@
 // Conexões diretas (WebRTC) entre todos os aparelhos da sala.
 // Para cada par, o aparelho com o menor id inicia. A sinalização passa pelo servidor da sala.
-import { WORKER_URL, CONNECT_TIMEOUT_MS } from './config.js?v=202611122007';
-import { randomId } from './device.js?v=202611122007';
+import { WORKER_URL, CONNECT_TIMEOUT_MS } from './config.js?v=202611222354';
+import { randomId } from './device.js?v=202611222354';
 
 const HEARTBEAT_MS = 5000;
 const DEAD_MS = 16000;
@@ -261,7 +261,13 @@ class Link {
       this.mesh.emit('close', { peerId: this.id });
       if (!this.mesh.closed && this.mesh.links.get(this.id) === this) {
         this.setPath('reconnecting');
-        setTimeout(() => this.recreate('dc-closed'), 1500);
+        const gen = this.gen;
+        setTimeout(() => {
+          // Os dois lados percebem a queda juntos. Se o outro já mandou uma conexão nova nesse meio-tempo,
+          // não derruba a que está nascendo (era isso que travava a reconexão até cair para a nuvem).
+          if (this.mesh.closed || this.gen !== gen || (this.dc && this.dc.readyState === 'open')) return;
+          this.recreate('dc-closed');
+        }, 1500);
       }
     };
   }

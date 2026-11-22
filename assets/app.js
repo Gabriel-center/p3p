@@ -1,14 +1,17 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611122007';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611122007';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611122007';
-import { RoomClient } from './room-client.js?v=202611122007';
-import { Mesh } from './mesh.js?v=202611122007';
-import { Codec, Transfers } from './transfer.js?v=202611122007';
-import { CloudUpload, downloadUrl } from './cloud.js?v=202611122007';
-import { cleanupOld } from './storage.js?v=202611122007';
-import { SpeedMeter } from './speed.js?v=202611122007';
-import * as hist from './history.js?v=202611122007';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611222354';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611222354';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611222354';
+import { RoomClient } from './room-client.js?v=202611222354';
+import { Mesh } from './mesh.js?v=202611222354';
+import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611222354';
+import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611222354';
+import { makeZip } from './zip.js?v=202611222354';
+import { Viewer } from './viewer.js?v=202611222354';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611222354';
+import { cleanupOld } from './storage.js?v=202611222354';
+import { SpeedMeter } from './speed.js?v=202611222354';
+import * as hist from './history.js?v=202611222354';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
@@ -47,7 +50,15 @@ const ICON = {
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>'),
   moon: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
   auto: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" stroke="none"/>'),
-  history: svg('<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"/><path d="M4 4v4.5h4.5M12 8v4l3 2"/>')
+  history: svg('<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5"/><path d="M4 4v4.5h4.5M12 8v4l3 2"/>'),
+  play: svg('<path d="M8 5.2v13.6L19 12z" fill="currentColor" stroke="none"/>'),
+  music: svg('<path d="M9 18V5.5l11-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>'),
+  zip: svg('<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5M10 5h1M10 8h1M10 11h1M9.5 14h2v3h-2z"/>'),
+  squeeze: svg('<path d="M4 12h16M12 2.5V9M9 6l3 3 3-3M12 21.5V15M9 18l3-3 3 3"/>'),
+  clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+  warn: svg('<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.2"/>'),
+  expand: svg('<path d="M4 9.5V4h5.5M20 9.5V4h-5.5M4 14.5V20h5.5M20 14.5V20h-5.5"/>'),
+  stack: svg('<rect x="3.5" y="7.5" width="13" height="13" rx="2"/><path d="M7.5 4h11A2.5 2.5 0 0 1 21 6.5v11"/>')
 };
 const MARK = `<svg class="mark" viewBox="0 0 30 18" aria-hidden="true"><line class="l" x1="9" y1="9" x2="21" y2="9"/><circle class="a" cx="7" cy="9" r="6"/><circle class="b" cx="23.5" cy="9" r="4.8"/></svg>`;
 
@@ -322,7 +333,12 @@ class RoomView {
     this.peers = new Map();
     this.files = new Map();
     this.uploads = new Map();        // id local → CloudUpload guardando na sala
-    this.cards = new Map();          // id → { el, model }
+    this.cards = new Map();          // id → { el, model }  (cartões de um arquivo só)
+    this.models = new Map();         // id → modelo atual (envio, recebimento ou nuvem)
+    this.albums = new Map();         // lote → { el, ids, items, ... }  (vários arquivos num cartão)
+    this.albumOf = new Map();        // id → lote
+    this.dirtyAlbums = new Set();
+    this.urls = new WeakMap();       // arquivo local → blob: URL
     this.msgIds = new Set();
     this.delivered = new Set();
     this.dirty = new Set();
@@ -343,6 +359,7 @@ class RoomView {
     if (pw) this.client.password = pw;
 
     this.render();
+    this.viewer = new Viewer({ resolve: id => this.viewItem(id), esc, icons: ICON, t });
     this.wire();
     if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__p2p = this;
     hist.visitRoom(room, [this.me.kind]);
@@ -409,13 +426,14 @@ class RoomView {
         <div class="gate" id="gate" hidden></div>
       </div>
     </div></section>
-    <dialog id="qr-dialog">
-      <div class="dlg-head"><div><h3>${esc(t('Convidar para a sala'))}</h3><p>${esc(t('Quem abrir este endereço entra na sala.'))}</p></div><form method="dialog"><button class="btn quiet icon sm" aria-label="${esc(t('Fechar'))}">${ICON.x}</button></form></div>
-      <div class="share-grid"><div class="qrbox" id="qr-box"></div>
-        <div class="share-side"><div class="qr-url">${esc(shareUrl(this.room))}</div>
-          <button class="btn solid" type="button" id="copy-link">${ICON.copy}${esc(t('Copiar link'))}</button>
-          <button class="btn line" type="button" id="native-share" hidden>${ICON.share}${esc(t('Compartilhar'))}</button>
-          <p style="margin:0;font-size:13px">${esc(t('No celular, aponte a câmera para o código.'))}</p></div></div>
+    <dialog id="qr-dialog" class="qr-dlg">
+      <div class="dlg-head"><div><h3>${esc(t('Convidar para a sala'))}</h3><p>${esc(t('Quem abrir este endereço entra na sala. No celular, aponte a câmera para o código.'))}</p></div><form method="dialog"><button class="btn quiet icon sm" aria-label="${esc(t('Fechar'))}">${ICON.x}</button></form></div>
+      <div class="qrbox big" id="qr-box"></div>
+      <div class="qr-url">${esc(shareUrl(this.room))}</div>
+      <div class="qr-acts">
+        <button class="btn solid" type="button" id="copy-link">${ICON.copy}${esc(t('Copiar link'))}</button>
+        <button class="btn line" type="button" id="native-share" hidden>${ICON.share}${esc(t('Compartilhar'))}</button>
+      </div>
     </dialog>
     <dialog id="name-dialog">
       <h3>${esc(t('Seu nome na sala'))}</h3><p>${esc(t('É como os outros aparelhos veem você.'))}</p>
@@ -570,7 +588,7 @@ class RoomView {
     });
     c.addEventListener('chat', e => this.onChat(e.detail.msg));
     c.addEventListener('chat-ack', e => this.markSent(e.detail.id));
-    c.addEventListener('file-added', e => { this.files.set(e.detail.file.id, e.detail.file); this.renderShelf(); this.maybeDelivered(e.detail.file); });
+    c.addEventListener('file-added', e => { this.files.set(e.detail.file.id, e.detail.file); this.renderShelf(); this.maybeDelivered(e.detail.file, true); });
     c.addEventListener('file-updated', e => { if (this.files.has(e.detail.file.id)) { this.files.set(e.detail.file.id, e.detail.file); this.renderShelf(); } });
     c.addEventListener('file-removed', e => { this.files.delete(e.detail.fileId); this.renderShelf(); });
     c.addEventListener('room-update', e => {
@@ -749,9 +767,14 @@ class RoomView {
       <div class="map">${this.mapSVG(peers)}</div>
       <div class="legend"><span><i class="trace direct"></i><span class="lbl">${esc(t('Direto'))}</span></span><span><i class="trace relay"></i><span class="lbl">${esc(t('Relay'))}</span></span><span><i class="trace server"></i><span class="lbl">${esc(t('Nuvem'))}</span></span></div>
       <ul class="devices">${row(this.me, true)}${peers.map(p => row(p, false)).join('')}</ul>
-      ${peers.length ? '' : `<div class="invite"><b>${esc(t('Só você por aqui'))}</b>${esc(t('Abra o mesmo endereço em outro aparelho para conectar.'))}<div class="acts"><button class="btn line sm" type="button" id="alone-qr">${ICON.qr}${esc(t('Mostrar QR code'))}</button><button class="btn quiet sm" type="button" id="alone-copy">${ICON.copy}${esc(t('Copiar link'))}</button></div></div>`}`;
-    $('#alone-qr')?.addEventListener('click', () => this.showQR());
-    $('#alone-copy')?.addEventListener('click', () => copy(shareUrl(this.room), t('Link copiado')));
+      <div class="invite">
+        <button class="qr-tile" type="button" id="side-qr" title="${esc(t('Ampliar QR code'))}" aria-label="${esc(t('Ampliar QR code'))}">${this.qr()}<span class="zoom">${ICON.expand}</span></button>
+        <div class="inv-text"><b>${esc(peers.length ? t('Chamar mais aparelhos') : t('Só você por aqui'))}</b><span>${esc(t('Aponte a câmera do celular para o código ou abra o mesmo endereço em outro aparelho.'))}</span>
+          <div class="acts"><button class="btn line sm" type="button" id="side-qr-big">${ICON.qr}${esc(t('Ampliar'))}</button><button class="btn quiet sm" type="button" id="side-copy">${ICON.copy}${esc(t('Copiar link'))}</button></div></div>
+      </div>`;
+    $('#side-qr')?.addEventListener('click', () => this.showQR());
+    $('#side-qr-big')?.addEventListener('click', () => this.showQR());
+    $('#side-copy')?.addEventListener('click', () => copy(shareUrl(this.room), t('Link copiado')));
   }
 
   mapSVG(peers) {
@@ -813,20 +836,24 @@ class RoomView {
     let el = $('#feed-empty');
     if (hasContent) { el?.remove(); return; }
     const state = !this.welcomed ? 'loading' : this.peers.size ? 'ready' : 'alone';
-    if (el && el.dataset.state === state) return;
+    const sig = `${state}|${[...this.peers.values()].map(p => p.name).join(',')}`;
+    if (el && el.dataset.sig === sig) return;
     if (!el) { el = document.createElement('div'); el.id = 'feed-empty'; feed.prepend(el); }
     el.dataset.state = state;
+    el.dataset.sig = sig;
     el.className = `feed-empty${state === 'loading' ? ' loading' : ''}`;
     if (state === 'loading') el.innerHTML = `<p>${esc(t('Entrando na sala'))}</p>`;
-    else if (state === 'alone') {
-      el.innerHTML = `<div class="qrmini">${qrSVG(shareUrl(this.room))}</div><h2>${esc(t('A sala está pronta'))}</h2>
-        <p>${esc(t('Abra o mesmo endereço em outro aparelho, ou aponte a câmera do celular para o código. Arquivos enviados agora ficam guardados por 48 h.'))}</p>
-        <div class="acts"><button class="btn solid sm" type="button" data-empty="copy">${ICON.copy}${esc(t('Copiar link'))}</button></div>`;
-      el.querySelector('[data-empty="copy"]').addEventListener('click', () => copy(shareUrl(this.room), t('Link copiado')));
-    } else {
+    else {
       const names = [...this.peers.values()].map(p => p.name);
-      el.innerHTML = `<h2>${esc(names.length === 1 ? t('Conectado com {name}', { name: names[0] }) : t('{n} aparelhos conectados', { n: names.length + 1 }))}</h2>
-        <p>${esc(t('Escreva uma mensagem ou arraste arquivos para cá. Eles vão direto para os outros aparelhos sempre que a rede deixar.'))}</p>`;
+      const title = state === 'alone' ? t('A sala está pronta') : names.length === 1 ? t('Conectado com {name}', { name: names[0] }) : t('{n} aparelhos conectados', { n: names.length + 1 });
+      const text = state === 'alone'
+        ? t('Abra o mesmo endereço em outro aparelho, ou aponte a câmera do celular para o código. Arquivos enviados agora ficam guardados por 48 h.')
+        : t('Escreva uma mensagem ou arraste arquivos para cá. Para chamar mais aparelhos, use o código.');
+      el.innerHTML = `<button class="qrmini" type="button" data-empty="qr" title="${esc(t('Ampliar QR code'))}" aria-label="${esc(t('Ampliar QR code'))}">${this.qr()}</button><h2>${esc(title)}</h2>
+        <p>${esc(text)}</p>
+        <div class="acts"><button class="btn solid sm" type="button" data-empty="copy">${ICON.copy}${esc(t('Copiar link'))}</button><button class="btn line sm" type="button" data-empty="qr">${ICON.expand}${esc(t('Ampliar código'))}</button></div>`;
+      el.querySelector('[data-empty="copy"]').addEventListener('click', () => copy(shareUrl(this.room), t('Link copiado')));
+      el.querySelectorAll('[data-empty="qr"]').forEach(b => b.addEventListener('click', () => this.showQR()));
     }
   }
 
@@ -909,30 +936,54 @@ class RoomView {
       return;
     }
     const targets = this.target === 'all' ? others : others.filter(p => p.peerId === this.target);
-    for (const f of files) {
+    // Miniaturas (uma de cada vez) para quem recebe ver a prévia antes do arquivo chegar.
+    const metas = thumbsInOrder(files);
+    // Vários arquivos juntos viram um lote: um cartão só, em grade, como um álbum do WhatsApp.
+    let batch = null, batchP = null;
+    if (files.length > 1) {
+      batch = { id: randomId(8), n: files.length, items: files.slice(0, 300).map(f => ({ name: f.name, size: f.size, type: f.type || '' })) };
+      batchP = Promise.all(metas.slice(0, 4)).then(ms => ({ ...batch, items: batch.items.map((x, i) => (ms[i] ? { ...x, thumb: ms[i].thumb, media: ms[i].media } : x)) }));
+    }
+    files.forEach((f, i) => {
+      const b = batch ? { ...batch, i } : null;
+      const meta = Promise.all([metas[i], batchP]).then(([m, bp]) => ({ thumb: m?.thumb || null, media: m?.media || null, batch: bp ? { ...bp, i } : null }));
       const cloudPeers = targets.filter(p => p.away || (this.mesh.path(p.peerId) === 'server' && !this.mesh.isOpen(p.peerId)));
       for (const p of targets) {
         if (cloudPeers.includes(p)) continue;
-        this.transfers.send(f, p.peerId, { peerName: p.name });
+        this.transfers.send(f, p.peerId, { peerName: p.name, batch: b, meta });
       }
-      if (cloudPeers.length) this.cloudDeliver(f, cloudPeers);
-    }
+      if (cloudPeers.length) this.cloudDeliver(f, cloudPeers, null, b, meta);
+    });
     if (this.tab !== 'feed' && this.tabsVisible()) this.selectTab('feed');
   }
 
   /** Envia pela nuvem para aparelhos sem conexão direta. */
-  cloudDeliver(file, peers, fromOutgoing) {
+  cloudDeliver(file, peers, fromOutgoing, batch = null, metaP = null) {
     const up = new CloudUpload(this.client, file, { to: peers.length === 1 ? peers[0].peerId : null, byName: this.me.name, byPeer: this.me.peerId });
     const cardId = fromOutgoing ? fromOutgoing.id : `c-${randomId(6)}`;
-    const model = { kind: 'cloud-out', id: cardId, up, peers, name: file.name, size: file.size, tr: fromOutgoing };
+    const model = {
+      kind: 'cloud-out', id: cardId, up, peers, name: file.name, size: file.size, tr: fromOutgoing,
+      batch: batch || fromOutgoing?.batch || null, thumb: fromOutgoing?.thumb || null, media: fromOutgoing?.media || null
+    };
     this.cardModels = this.cardModels || new Map();
     this.cardModels.set(cardId, model);
+    metaP?.then(x => { if (!x) return; model.thumb = x.thumb; model.media = x.media; if (x.batch) model.batch = x.batch; this.markDirty(model); });
     up.addEventListener('update', () => this.markDirty(model));
     this.markDirty(model);
     up.start().then(f => {
       if (!f) return;
+      // Aviso para quem recebe, com a miniatura e o lote. O servidor aceita mensagens de até 64 KB.
+      const b = model.batch;
+      const data = {
+        ch: 'app', kind: 'cloud-delivery', fileId: f.id, tid: fromOutgoing?.id || null, name: f.name, size: f.size, type: file.type || '',
+        wire: up.wireDone, enc: up.gzip ? 'gzip' : null, thumb: model.thumb, media: model.media,
+        batch: b ? { id: b.id, i: b.i, n: b.n, items: b.items ? b.items.slice(0, 100) : null } : null
+      };
+      if (JSON.stringify(data).length > 50000 && data.batch?.items) data.batch.items = data.batch.items.map(x => ({ name: x.name, size: x.size, type: x.type }));
+      if (JSON.stringify(data).length > 50000 && data.batch) data.batch.items = null;
+      if (JSON.stringify(data).length > 50000) data.thumb = null;
       for (const p of peers) {
-        this.client.send({ t: 'peer', to: p.peerId, data: { ch: 'app', kind: 'cloud-delivery', fileId: f.id, tid: fromOutgoing?.id || null, name: f.name, size: f.size } }, { queue: true });
+        this.client.send({ t: 'peer', to: p.peerId, data }, { queue: true });
         hist.logEvent({ type: 'sent', room: this.room, file: f.name, size: f.size, to: p.name, path: 'server', ms: up.finishedAt - up.startedAt });
       }
     }).catch(e => this.cloudError(e));
@@ -971,22 +1022,47 @@ class RoomView {
   onAppSignal(from, data) {
     if (!data || data.ch !== 'app') return;
     if (data.kind === 'cloud-delivery') {
-      const f = this.files.get(data.fileId) || { id: data.fileId, name: data.name, size: data.size };
-      this.showDelivered(f, from, data.tid);
+      const f = this.files.get(data.fileId) || {
+        id: data.fileId, name: String(data.name || 'arquivo').slice(0, 200), size: Number(data.size) || 0, type: String(data.type || '').slice(0, 120),
+        storedSize: Number(data.wire) || null, encoding: data.enc === 'gzip' ? 'gzip' : null
+      };
+      const tid = typeof data.tid === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(data.tid) ? data.tid : null;
+      this.showDelivered(f, from, tid, data);
     }
   }
 
-  maybeDelivered(file) {
-    if (file.to && file.to === this.me.peerId) this.showDelivered(file, file.byPeer, null);
+  maybeDelivered(file, live) {
+    if (!file.to || file.to !== this.me.peerId) return;
+    // Ao vivo, o aviso de quem enviou (com lote e miniatura) chega logo depois: espera um pouco por ele.
+    if (live) setTimeout(() => { if (!this.destroyed) this.showDelivered(file, file.byPeer, null); }, 2500);
+    else this.showDelivered(file, file.byPeer, null);
   }
 
-  showDelivered(file, from, tid) {
-    if (this.delivered.has(file.id)) return;
+  showDelivered(file, from, tid, extra = {}) {
+    if (this.delivered.has(file.id)) {
+      // Já apareceu sem os detalhes: completa com o lote e a miniatura.
+      const m = this.models.get(this.deliveredAs?.get(file.id));
+      if (m && (!m.batch || !m.thumb)) {
+        m.batch ||= cleanBatch(extra.batch);
+        m.thumb ||= cleanThumb(extra.thumb);
+        m.media ||= cleanMedia(extra.media);
+        this.markDirty(m);
+      }
+      return;
+    }
     this.delivered.add(file.id);
     const sender = this.peers.get(from)?.name || file.byName || '';
-    const model = { kind: 'cloud-in', id: tid || `d-${file.id}`, file, from: sender };
+    // Se começou direto e passou para a nuvem, herda o lote e a miniatura do recebimento direto.
+    const prev = tid ? this.transfers.inc.get(tid) : null;
+    const model = {
+      kind: 'cloud-in', id: tid || `d-${file.id}`, file, from: sender, fromPeer: from || file.byPeer || '',
+      batch: cleanBatch(extra.batch) || prev?.batch || null, thumb: cleanThumb(extra.thumb) || prev?.thumb || null,
+      media: cleanMedia(extra.media) || prev?.media || null, wire: Number(extra.wire) || null
+    };
     this.cardModels = this.cardModels || new Map();
     this.cardModels.set(model.id, model);
+    this.models.set(model.id, model);
+    (this.deliveredAs ||= new Map()).set(file.id, model.id);
     this.markDirty(model);
     this.notify();
     hist.logEvent({ type: 'received', room: this.room, file: file.name, size: file.size, from: sender, path: 'server' });
@@ -1002,7 +1078,7 @@ class RoomView {
       const meter = this.upMeters.get(id);
       return `<li class="server"><div class="top"><span class="ftype">${esc(ext(u.name))}</span><div style="min-width:0"><div class="fname">${esc(u.name)}</div><div class="fmeta"><span class="tnum">${esc(bytes(u.size))}</span><span>${esc(t('Enviando para a nuvem'))}</span></div></div>
         <div class="acts"><button class="btn quiet icon sm" type="button" data-up-cancel="${esc(id)}" aria-label="${esc(t('Cancelar'))}" title="${esc(t('Cancelar'))}">${ICON.x}</button></div></div>
-        <div class="live" data-up="${esc(id)}">${this.liveHTML(meter, u.liveStats(), u.size)}</div></li>`;
+        <div class="live" data-up="${esc(id)}">${this.liveHTML(meter, u.liveStats(), u.size)}</div><div class="comp-slot"></div></li>`;
     }).join('');
     const ttl = this.limits.fileTtlMs || 48 * 3600000;
     const rows = files.map(f => {
@@ -1012,6 +1088,7 @@ class RoomView {
       return `<li data-id="${esc(f.id)}">
         <div class="top"><span class="ftype">${esc(ext(f.name))}</span><div style="min-width:0"><div class="fname" title="${esc(f.name)}">${esc(f.name)}</div><div class="fmeta"><span class="tnum">${esc(bytes(f.size))}</span><span>${esc(t('por {name}', { name: f.byPeer === this.me.peerId ? t('você') : f.byName }))}</span></div></div>
         <div class="acts"><a class="btn line icon sm" href="${esc(downloadUrl(this.client, f.id))}" aria-label="${esc(t('Baixar {name}', { name: f.name }))}" title="${esc(t('Baixar'))}">${ICON.down}</a><button class="btn quiet icon sm" type="button" data-del="${esc(f.id)}" aria-label="${esc(t('Apagar {name}', { name: f.name }))}" title="${esc(t('Apagar'))}">${ICON.trash}</button></div></div>
+        <div class="comp-slot">${this.compHTML({ comp: { raw: f.size, wire: f.storedSize || f.size, codec: f.encoding || 'none', final: true } })}</div>
         <div class="ttl${low ? ' low' : ''}"><div class="tbar"><i style="width:${Math.min(100, left / ttl * 100).toFixed(0)}%"></i></div><span>${esc(h >= 1 ? t('some em {h} h', { h }) : t('some em menos de 1 h'))}</span></div>
       </li>`;
     }).join('');
@@ -1043,12 +1120,28 @@ class RoomView {
       const list = [...this.dirty];
       this.dirty.clear();
       for (const m of list) this.renderCard(m);
+      for (const key of this.dirtyAlbums) { const a = this.albums.get(key); if (a) this.renderAlbum(a); }
+      this.dirtyAlbums.clear();
       this.updateWakeLock();
     });
   }
+  /** Algo mudou fora do fluxo das transferências (uma prévia ficou pronta, por exemplo). */
+  touch(m) { if (m) this.markDirty(m); }
 
   renderCard(m) {
     const id = m.id;
+    const current = this.cardModels?.get(id) || m;
+    this.models.set(id, current);
+    // Arquivo de um lote: vai para o cartão do lote.
+    const key = this.albumOf.get(id) || this.albumKey(current);
+    if (key) {
+      // Virou parte de um lote depois de já ter aparecido sozinho: sai o cartão avulso.
+      const solo = this.cards.get(id);
+      if (solo) { solo.el.remove(); this.cards.delete(id); }
+      this.addToAlbum(key, current);
+      this.logTerminal(current);
+      return;
+    }
     let entry = this.cards.get(id);
     if (!entry) {
       if (m.dir === 'in' && m.state === 'receiving' && !m.notified) { m.notified = true; this.notify(); }
@@ -1060,14 +1153,16 @@ class RoomView {
       this.append(el);
     }
     // Um cartão que virou "nuvem" passa a mostrar o upload ligado a ele.
-    const model = this.cardModels?.get(id) || m;
+    const model = current;
     entry.model = model;
+    const it = this.itemInfo(model);
     const path = this.cardPath(model);
-    const sig = [model.kind || model.dir, model.state, model.up?.state, path, this.peers.get(model.peerId)?.name].join('|');
+    const sig = [model.kind || model.dir, model.state, model.up?.state, path, this.peers.get(model.peerId)?.name, !!it.preview, !!it.thumb, it.intact, it.media?.w].join('|');
     if (entry.sig !== sig) {
       entry.sig = sig;
-      entry.el.className = `xfer ${path}${this.isMine(model) ? ' mine' : ''}`;
-      entry.el.innerHTML = this.cardHTML(model);
+      const media = it.kind === 'image' || it.kind === 'video';
+      entry.el.className = `xfer ${path}${this.isMine(model) ? ' mine' : ''}${media ? ' has-media' : ''}`;
+      entry.el.innerHTML = this.mediaHTML(it) + this.cardHTML(model) + `<div class="comp-slot">${this.compHTML(it)}</div>`;
     }
     this.logTerminal(model);
   }
@@ -1109,15 +1204,6 @@ class RoomView {
     const who = out ? t('Para {name}', { name: `<b>${esc(peerName(m.peerId))}</b>` }) : t('De {name}', { name: `<b>${esc(peerName(m.peerId))}</b>` });
     const path = this.cardPath(m);
     const total = m.size;
-    const doneBytes = m.done;
-    const note = () => {
-      if (out) {
-        if (m.codec !== 'none' && m.raw) return `${t('Comprimido {p}%', { p: Math.max(0, Math.round((1 - m.ratio) * 100)) })}${m.codec === 'zstd' && m.usedLevel ? ` · ${t('nível {n}', { n: m.usedLevel })}` : ''}`;
-        return m.alreadyCompressed ? t('Sem compressão, já compactado') : t('Sem compressão');
-      }
-      if (m.codec !== 'none' && m.wire && doneBytes) return t('Comprimido {p}%', { p: Math.max(0, Math.round((1 - m.wire / doneBytes) * 100)) });
-      return t('Sem compressão');
-    };
     const progress = () => `<div class="live">${this.liveHTML(this.cards.get(m.id)?.meter, m.liveStats(), total, m)}</div>`;
     let body = '';
     switch (m.state) {
@@ -1126,7 +1212,7 @@ class RoomView {
       case 'waiting':
         body = `${m.acked ? progress() : ''}<div class="ok-note">${esc(t('Esperando {name} aceitar', { name: peerName(m.peerId) }))}</div><div class="acts">${btn('cancel', t('Cancelar'), 'quiet')}</div>`; break;
       case 'sending': case 'receiving':
-        body = `${progress()}<div class="acts">${out ? btn('pause', t('Pausar')) : ''}${btn('cancel', t('Cancelar'), 'quiet')}<span class="bline" style="margin-left:auto;align-self:center"><span>${esc(note())}</span></span></div>`; break;
+        body = `${progress()}<div class="acts">${out ? btn('pause', t('Pausar')) : ''}${btn('cancel', t('Cancelar'), 'quiet')}</div>`; break;
       case 'paused':
         body = `${progress()}<div class="acts">${btn('unpause', t('Continuar'))}${btn('cancel', t('Cancelar'), 'quiet')}</div>`; break;
       case 'interrupted':
@@ -1140,8 +1226,8 @@ class RoomView {
         const graph = meter && meter.lastBin >= 0 ? `<div class="speedgraph">${meter.svg()}</div>` : '';
         const summary = `${out ? t('Enviado em {t}', { t: duration(ms) }) : t('Recebido em {t}', { t: duration(ms) })}${avg ? ` · ${t('média de {s}', { s: avg })}` : ''}`;
         body = out
-          ? `${graph}<div class="bline">${done(summary)}<span>${esc(note())}</span></div>`
-          : `${graph}<div class="bline">${done(summary)}<span>${esc(note())}</span></div><div class="acts"><a class="btn solid sm" href="${esc(m.url)}" download="${esc(m.name)}">${ICON.down}${esc(t('Salvar arquivo'))}</a>${btn('store', t('Guardar na sala'), 'quiet')}</div>`;
+          ? `${graph}<div class="bline">${done(summary)}</div>`
+          : `${graph}<div class="bline">${done(summary)}</div><div class="acts"><a class="btn solid sm" href="${esc(m.url)}" download="${esc(m.name)}">${ICON.down}${esc(t('Salvar arquivo'))}</a>${btn('store', t('Guardar na sala'), 'quiet')}</div>`;
         break;
       }
       case 'cloud':
@@ -1153,6 +1239,381 @@ class RoomView {
       default:
     }
     return top(m.name, m.size, who, path) + body;
+  }
+
+  // ----- prévias, lotes e visualizador -----
+  objUrl(blob) {
+    let u = this.urls.get(blob);
+    if (!u) { u = URL.createObjectURL(blob); this.urls.set(blob, u); }
+    return u;
+  }
+
+  /** O que a interface precisa saber de um arquivo, venha de onde vier: envio direto, recebimento ou nuvem. */
+  itemInfo(m) {
+    const k = m.kind;
+    const file = k === 'cloud-in' ? m.file : null;
+    const name = file ? file.name : m.name;
+    const size = file ? file.size : m.size;
+    const type = file ? (file.type || '') : k === 'cloud-out' ? (m.up.file.type || '') : (m.type || '');
+    const kind = kindOf(type, name);
+    let state;
+    if (k === 'cloud-in') state = 'done';
+    else if (k === 'cloud-out') state = ['preparing', 'uploading'].includes(m.up.state) ? 'active' : m.up.state;
+    else state = ['sending', 'receiving', 'preparing'].includes(m.state) ? 'active' : m.state;
+    // Da nuvem: só fica local depois de baixado aqui (para o zip, por exemplo).
+    const blob = m.dir === 'out' ? m.file : k === 'cloud-out' ? m.up.file : (m.dir === 'in' && m.state === 'done') ? m.blob : k === 'cloud-in' ? m.localBlob || null : null;
+    const remote = k === 'cloud-in' ? downloadUrl(this.client, file.id) : null;
+    const full = blob ? (m.dir === 'in' ? m.url : this.objUrl(blob)) : remote ? `${remote}&inline=1` : null;
+    const preview = blob ? previewUrl(blob, type, name, () => this.touch(m)) : null;
+    let progress = 0;
+    if (state === 'done') progress = 1;
+    else { const src = k === 'cloud-out' ? m.up : m; if (src.liveStats && size) progress = Math.min(1, src.liveStats().raw / size); }
+    let comp = null;
+    if (m.dir === 'out') comp = { raw: m.raw, wire: m.wire, codec: m.codec, level: m.usedLevel, already: m.alreadyCompressed };
+    else if (m.dir === 'in') comp = { raw: m.done, wire: m.wireDone, codec: m.codec };
+    else if (k === 'cloud-out') {
+      const fin = m.up.state === 'done';
+      comp = { raw: fin ? m.up.size : m.up.producedRaw, wire: fin ? m.up.wireDone : m.up.producedWire, codec: m.up.gzip ? 'gzip' : 'none' };
+    } else if (k === 'cloud-in') {
+      const f = this.files.get(file.id) || file;
+      const stored = f.storedSize || m.wire;
+      if (stored) comp = { raw: f.size, wire: stored, codec: f.encoding || 'none' };
+    }
+    if (comp) comp.final = state === 'done';
+    return {
+      id: m.id, m, name, size, type, kind, state, mine: this.isMine(m), blob, remote, full, preview,
+      thumb: m.thumb || null, media: m.media || null, progress, comp, intact: !!m.intact, label: ext(name),
+      download: m.dir === 'in' ? m.url : remote, from: m.from || (m.dir === 'in' ? this.peers.get(m.peerId)?.name || m.peerName : '')
+    };
+  }
+
+  /** Linha "Comprimido 62% · 10 MB → 3,8 MB", sempre presente quando já passou algum byte. */
+  compHTML(it) {
+    const c = it?.comp;
+    if (!c || !(c.raw > 0)) return '';
+    const pct = Math.max(0, Math.round((1 - c.wire / c.raw) * 100));
+    const how = c.codec === 'none'
+      ? (c.already ? t('Sem compressão (já é compactado)') : t('Sem compressão'))
+      : t('Comprimido {p}%', { p: pct });
+    const algo = c.codec === 'zstd' ? `zstd${c.level ? ` ${c.level}` : ''}` : ['none', 'mixed'].includes(c.codec) ? '' : c.codec;
+    return `<div class="comp" title="${esc(t('Tamanho original → tamanho que passou pela rede'))}"><span class="ci">${ICON.squeeze}</span>`
+      + `<span class="cv tnum"><b>${esc(how)}</b><span>${esc(bytes(c.raw))} → ${esc(bytes(c.wire))}${c.final ? '' : ` ${esc(t('até agora'))}`}</span>${algo ? `<em>${esc(algo)}</em>` : ''}</span>`
+      + `${it.intact ? `<span class="ok" title="${esc(t('Cada bloco foi conferido com SHA-256 depois de descompactado.'))}">${ICON.check}${esc(t('Idêntico ao original'))}</span>` : ''}</div>`;
+  }
+  setComp(el, it) {
+    const slot = el.querySelector('.comp-slot');
+    if (!slot) return;
+    const html = this.compHTML(it);
+    if (slot._h !== html) { slot.innerHTML = html; slot._h = html; }
+  }
+
+  stateText(x) {
+    const pct = Math.round((x.progress || 0) * 100);
+    switch (x.state) {
+      case 'done': return x.intact ? t('Conferido') : x.mine ? t('Enviado') : t('Pronto');
+      case 'active': return `${x.mine ? t('Enviando') : t('Recebendo')} ${pct}%`;
+      case 'queued': case 'waiting': return t('Na fila');
+      case 'paused': return t('Pausado');
+      case 'interrupted': return t('A conexão caiu');
+      case 'stalled': return t('Parado');
+      case 'cloud': return t('Indo pela nuvem');
+      case 'cancelled': return t('Cancelado');
+      case 'failed': return t('Falhou');
+      default: return '';
+    }
+  }
+
+  ringHTML(x) {
+    const pct = Math.round((x.progress || 0) * 100);
+    const wait = ['queued', 'waiting'].includes(x.state);
+    const hold = ['paused', 'interrupted', 'cloud'].includes(x.state);
+    return `<span class="ring${wait ? ' wait' : ''}${hold ? ' hold' : ''}" data-ring="${esc(x.id)}"><svg viewBox="0 0 40 40" aria-hidden="true"><circle class="bg" cx="20" cy="20" r="17"/><circle class="fg" cx="20" cy="20" r="17" pathLength="100" stroke-dasharray="${pct} 100"/></svg><b class="tnum">${wait ? ICON.clock : `${pct}%`}</b></span>`;
+  }
+  overlayHTML(x, more = 0) {
+    if (more) return `<span class="more tnum">+${more}</span>`;
+    const dur = x.kind === 'video' && x.media?.dur ? `<span class="dur tnum">${ICON.play}${clock(x.media.dur)}</span>` : '';
+    if (['failed', 'cancelled', 'stalled'].includes(x.state)) return `<span class="ring bad">${ICON.warn}</span>${dur}`;
+    if (x.state !== 'done') return this.ringHTML(x) + dur;
+    if (x.kind === 'video') return `<span class="playbtn">${ICON.play}</span>${dur}`;
+    if (x.kind === 'image' && x.remote && !x.preview) return `<span class="ring idle">${ICON.down}</span>`;
+    return dur;
+  }
+  updateRings(root, items) {
+    const rings = root.querySelectorAll('[data-ring]');
+    if (!rings.length) return;
+    const by = new Map(items.map(x => [x.id, x]));
+    for (const r of rings) {
+      const x = by.get(r.dataset.ring);
+      if (!x) continue;
+      const pct = Math.round((x.progress || 0) * 100);
+      r.querySelector('.fg')?.setAttribute('stroke-dasharray', `${pct} 100`);
+      if (!r.classList.contains('wait')) { const b = r.querySelector('b'); if (b) b.textContent = `${pct}%`; }
+    }
+  }
+
+  /** Foto ou vídeo no topo do cartão, no tamanho certo, com a prévia desfocada até o arquivo chegar. */
+  mediaHTML(it) {
+    if (it.kind !== 'image' && it.kind !== 'video') return '';
+    const src = it.preview || it.thumb;
+    const r = it.media?.w && it.media?.h ? it.media.w / it.media.h : it.kind === 'video' ? 16 / 9 : 4 / 3;
+    const ar = Math.max(0.6, Math.min(1.9, r));
+    return `<button class="media${it.preview ? '' : ' blurred'}" type="button" data-act="view" data-id="${esc(it.id)}" style="aspect-ratio:${ar.toFixed(3)}" aria-label="${esc(t('Abrir {name}', { name: it.name }))}">${src ? `<img src="${esc(src)}" alt="" decoding="async">` : `<span class="ph">${esc(it.label)}</span>`}${this.overlayHTML(it)}</button>`;
+  }
+
+  // Lote: um cartão só, com até 4 quadrados e "+N" no último, a lista completa e "Baixar tudo (.zip)".
+  albumKey(m) {
+    const b = m.batch;
+    if (!b || !(b.n > 1)) return null;
+    const who = m.kind === 'cloud-out' ? m.peers.map(p => p.peerId).sort().join(',') : m.kind === 'cloud-in' ? m.fromPeer : m.peerId;
+    return `${this.isMine(m) ? 'o' : 'i'}:${b.id}:${who || ''}`;
+  }
+
+  addToAlbum(key, m) {
+    let a = this.albums.get(key);
+    const b = m.batch;
+    if (!a) {
+      const el = document.createElement('article');
+      el.dataset.album = key;
+      a = { key, el, ids: [], n: b?.n || 2, items: null, mine: this.isMine(m), peerId: m.peerId || m.fromPeer || m.peers?.[0]?.peerId || '', sig: '', open: false };
+      el.addEventListener('click', e => this.onAlbumAction(e, key));
+      el.addEventListener('toggle', e => { if (e.target.matches?.('details')) a.open = e.target.open; }, true);
+      this.albums.set(key, a);
+      this.append(el);
+      if (!a.mine) this.notify();
+    }
+    this.albumOf.set(m.id, key);
+    if (b) {
+      a.ids[b.i] = m.id;
+      a.n = Math.max(a.n, b.n);
+      const thumbs = list => (list || []).filter(x => x.thumb).length;
+      if (b.items && (!a.items || thumbs(b.items) >= thumbs(a.items))) a.items = b.items;
+    }
+    a.names ||= new Set();
+    const name = a.mine ? (m.peers ? m.peers.map(p => p.name).join(', ') : this.peers.get(m.peerId)?.name || m.peerName) : (m.from || this.peers.get(m.peerId)?.name || '');
+    if (name) a.names.add(name);
+    // Quem recebe cancelou o lote: o que chegar depois também é cancelado.
+    if (a.cancelled && m.dir === 'in' && m.state === 'receiving') m.cancel();
+    this.dirtyAlbums.add(key);
+  }
+
+  albumItems(a) {
+    const out = [];
+    const real = [];
+    for (let i = 0; i < a.n; i++) {
+      const id = a.ids[i];
+      const m = id && (this.cardModels?.get(id) || this.models.get(id));
+      if (m) { const x = this.itemInfo(m); out.push(x); real.push(x); continue; }
+      const x = a.items?.[i] || {};
+      out.push({
+        id: `ph:${a.key}:${i}`, placeholder: true, name: x.name || '…', size: x.size || 0, type: x.type || '', kind: kindOf(x.type, x.name),
+        state: 'queued', mine: a.mine, thumb: x.thumb || null, media: x.media || null, preview: null, progress: 0, comp: null, intact: false,
+        label: x.name ? ext(x.name) : '…'
+      });
+    }
+    // Quem envia cancelou (ou tudo já terminou sem estes): os que nunca chegaram também contam como cancelados.
+    const over = real.length && real.every(x => ['done', 'failed', 'cancelled'].includes(x.state)) && real.some(x => x.state === 'cancelled');
+    if (a.cancelled || over) for (const x of out) if (x.placeholder) x.state = 'cancelled';
+    return out;
+  }
+
+  albumStats(items) {
+    let net = 0, raw = 0;
+    for (const x of items) {
+      if (!x.m) continue;
+      const src = x.m.kind === 'cloud-out' ? x.m.up : x.m;
+      if (src.liveStats) { const s = src.liveStats(); net += s.net; raw += s.raw; } else if (x.state === 'done') raw += x.size;
+    }
+    return { net, raw };
+  }
+
+  albumComp(items) {
+    const cs = items.filter(x => x.comp && x.comp.raw > 0);
+    if (!cs.length) return { comp: null };
+    const codecs = new Set(cs.map(x => x.comp.codec));
+    return {
+      comp: {
+        raw: cs.reduce((s, x) => s + x.comp.raw, 0), wire: cs.reduce((s, x) => s + x.comp.wire, 0),
+        codec: codecs.size === 1 ? [...codecs][0] : 'mixed', final: items.every(x => x.state === 'done'), already: cs.every(x => x.comp.already)
+      },
+      intact: items.every(x => x.state === 'done' && x.intact)
+    };
+  }
+
+  tileHTML(x, more) {
+    const media = x.kind === 'image' || x.kind === 'video';
+    const src = media ? (x.preview || x.thumb) : null;
+    const inner = src
+      ? `<img src="${esc(src)}" alt=""${x.preview ? '' : ' class="blur"'} decoding="async">`
+      : `<span class="tfile"><span class="ext">${x.kind === 'audio' ? ICON.music : esc(x.label)}</span><span class="tn">${esc(x.name)}</span><span class="ts tnum">${esc(bytes(x.size))}</span></span>`;
+    return `<button class="tile${media && src ? '' : ' doc'}" type="button" data-act="view" data-id="${esc(x.id)}" aria-label="${esc(t('Abrir {name}', { name: x.name }))}">${inner}${this.overlayHTML(x, more)}</button>`;
+  }
+
+  rowHTML(x) {
+    const pic = (x.kind === 'image' || x.kind === 'video') && (x.preview || x.thumb);
+    const mini = pic ? `<img src="${esc(x.preview || x.thumb)}" alt=""${x.preview ? '' : ' class="blur"'}>` : `<span>${x.kind === 'audio' ? ICON.music : esc(x.label)}</span>`;
+    const c = x.comp && x.comp.raw > 0 ? (x.comp.codec === 'none' ? t('sem compressão') : t('comprimido {p}%', { p: Math.max(0, Math.round((1 - x.comp.wire / x.comp.raw) * 100)) })) : '';
+    const dl = !x.mine && x.state === 'done' && x.download
+      ? `<a class="btn quiet icon sm" href="${esc(x.download)}" download="${esc(x.name)}" title="${esc(t('Baixar'))}" aria-label="${esc(t('Baixar {name}', { name: x.name }))}">${ICON.down}</a>` : '';
+    return `<li><button class="mini" type="button" data-act="view" data-id="${esc(x.id)}" aria-label="${esc(t('Abrir {name}', { name: x.name }))}">${mini}</button>
+      <div class="rt"><div class="fname" title="${esc(x.name)}">${esc(x.name)}</div><div class="fmeta tnum"><span>${esc(bytes(x.size))}</span><span data-rowst="${esc(x.id)}"${x.intact ? ' class="okc"' : ''}>${esc(this.stateText(x))}</span>${c ? `<span>${esc(c)}</span>` : ''}</div></div>${dl}</li>`;
+  }
+
+  renderAlbum(a) {
+    const items = this.albumItems(a);
+    const real = items.filter(x => !x.placeholder);
+    const active = items.some(x => !['done', 'failed', 'cancelled'].includes(x.state));
+    a.active = active;
+    const cur = real.find(x => x.state === 'active') || real.find(x => x.state !== 'done') || real[real.length - 1];
+    const path = cur ? this.cardPath(cur.m) : 'connecting';
+    const sig = [items.map(x => [x.id, x.state, !!x.preview, !!x.thumb, x.intact].join(':')).join(','), path, a.zipping, [...(a.names || [])].join()].join('|');
+    if (sig === a.sig) return;
+    a.sig = sig;
+    const n = a.n;
+    const total = items.reduce((s, x) => s + (x.size || 0), 0);
+    const doneN = items.filter(x => x.state === 'done').length;
+    const names = [...(a.names || [])].join(', ');
+    const who = a.mine ? t('Para {name}', { name: `<b>${esc(names)}</b>` }) : t('De {name}', { name: `<b>${esc(names)}</b>` });
+    let live = '';
+    if (active) live = `<div class="live">${this.liveHTML(a.meter, this.albumStats(items), total)}</div>`;
+    else if (a.meter && a.meter.lastBin >= 0 && a.meter.peak > 0) live = `<div class="speedgraph">${a.meter.svg()}</div>`;
+    const btn = (act, label, cls = 'line', icon = '') => `<button class="btn ${cls} sm" type="button" data-act="${act}"${act === 'zip' && a.zipping ? ' disabled' : ''}>${icon}<span class="lbl">${esc(label)}</span></button>`;
+    let acts = '';
+    if (active) {
+      const outs = real.filter(x => x.m.dir === 'out');
+      if (outs.some(x => x.m.state === 'sending')) acts += btn('pause', t('Pausar'));
+      if (outs.some(x => x.m.state === 'paused')) acts += btn('unpause', t('Continuar'));
+      if (outs.some(x => x.m.state === 'interrupted')) acts += btn('retry', t('Tentar agora')) + btn('to-cloud', t('Mandar pela nuvem'), 'quiet');
+      acts += btn('cancel-all', t('Cancelar tudo'), 'quiet');
+    } else if (!a.mine && doneN) {
+      acts += btn('zip', a.zipText || t('Baixar tudo (.zip)'), 'solid', ICON.zip);
+      acts += btn('each', t('Baixar separados'), 'line', ICON.down);
+    }
+    const status = active ? t('{d} de {n} prontos', { d: doneN, n }) : doneN === n ? (a.mine ? t('Todos enviados') : t('Todos recebidos')) : t('{d} de {n} chegaram', { d: doneN, n });
+    a.el.className = `xfer album has-media ${path}${a.mine ? ' mine' : ''}`;
+    a.el.innerHTML = `<div class="album-grid n${Math.min(n, 4)}">${items.slice(0, 4).map((x, i) => this.tileHTML(x, i === 3 && n > 4 ? n - 4 : 0)).join('')}</div>
+      <div class="xfer-top"><span class="ftype">${ICON.stack}</span><div style="min-width:0"><div class="fname">${esc(t('{n} arquivos', { n }))} · <span class="tnum">${esc(bytes(total))}</span></div><div class="fmeta"><span>${who}</span><span data-album-status>${esc(status)}</span></div></div>${pill(path)}</div>
+      ${live}
+      <div class="comp-slot">${this.compHTML(this.albumComp(items))}</div>
+      ${acts ? `<div class="acts">${acts}</div>` : ''}
+      <details class="files-list"${a.open ? ' open' : ''}><summary>${esc(t('Ver os {n} arquivos', { n }))}</summary><ul>${items.map(x => this.rowHTML(x)).join('')}</ul></details>`;
+  }
+
+  liveAlbum(a) {
+    const items = this.albumItems(a);
+    const total = items.reduce((s, x) => s + (x.size || 0), 0);
+    const st = this.albumStats(items);
+    a.meter ||= new SpeedMeter();
+    a.meter.sample(st.net, total ? st.raw / total : 0);
+    const box = a.el.querySelector('.live');
+    if (box) box.innerHTML = this.liveHTML(a.meter, st, total);
+    this.updateRings(a.el, items);
+    const by = new Map(items.map(x => [x.id, x]));
+    for (const s of a.el.querySelectorAll('[data-rowst]')) { const x = by.get(s.dataset.rowst); if (x) s.textContent = this.stateText(x); }
+    this.setComp(a.el, this.albumComp(items));
+  }
+
+  onAlbumAction(e, key) {
+    const b = e.target.closest('[data-act]');
+    const a = this.albums.get(key);
+    if (!b || !a) return;
+    const act = b.dataset.act;
+    if (act === 'view') {
+      const ids = this.albumItems(a).map(x => x.id);
+      this.viewer.openWith(ids, Math.max(0, ids.indexOf(b.dataset.id)));
+      return;
+    }
+    if (act === 'zip') { this.zipAlbum(a); return; }
+    if (act === 'each') { this.downloadEach(a); return; }
+    const models = a.ids.filter(Boolean).map(id => this.cardModels?.get(id) || this.models.get(id)).filter(Boolean);
+    if (act === 'cancel-all') {
+      if (!a.mine) a.cancelled = true;
+      // Do último para o primeiro: assim a fila não começa o próximo enquanto cancela.
+      for (const m of [...models].reverse()) {
+        if (m.kind === 'cloud-out') { if (['preparing', 'uploading'].includes(m.up.state)) { m.up.abort(); if (m.tr) m.tr.state = 'cancelled'; } }
+        else if (m.cancel && !['done', 'failed', 'cancelled'].includes(m.state)) m.cancel();
+      }
+    } else if (act === 'pause') models.filter(m => m.state === 'sending').forEach(m => m.pause());
+    else if (act === 'unpause') models.filter(m => m.state === 'paused').forEach(m => m.unpause());
+    else if (act === 'retry') { new Set(models.filter(m => m.state === 'interrupted').map(m => m.peerId)).forEach(p => this.mesh.links.get(p)?.recreate('manual')); this.client.nudge(); }
+    else if (act === 'to-cloud') models.filter(m => m.state === 'interrupted').forEach(m => this.moveToCloud(m));
+    models.forEach(m => this.markDirty(m));
+    this.dirtyAlbums.add(key);
+  }
+
+  /** Junta os arquivos do lote num .zip, aqui mesmo no navegador, e baixa. */
+  async zipAlbum(a) {
+    if (a.zipping) return;
+    const items = this.albumItems(a).filter(x => x.state === 'done' && (x.blob || x.remote));
+    if (!items.length) return;
+    a.zipping = true;
+    const label = text => { a.zipText = text; const l = a.el.querySelector('[data-act="zip"] .lbl'); if (l) l.textContent = text; };
+    a.el.querySelector('[data-act="zip"]')?.setAttribute('disabled', '');
+    try {
+      const entries = [];
+      for (const x of items) {
+        let blob = x.blob;
+        if (!blob) {
+          label(t('Baixando {name}', { name: x.name }));
+          const r = await fetch(x.remote);
+          if (!r.ok) throw new Error(`http ${r.status}`);
+          blob = await r.blob();
+          if (x.m) x.m.localBlob = blob;
+        }
+        entries.push({ name: x.name, blob });
+      }
+      const zip = await makeZip(entries, { onProgress: (d, total) => label(t('Compactando {p}%', { p: total ? Math.floor(d / total * 100) : 100 })) });
+      if (window.__p2p === this) this.lastZip = zip;   // só nos testes locais
+      this.save(zip, `${this.room}-${items.length}-${t('arquivos')}.zip`);
+      toast(t('Zip pronto: {n} arquivos, {size}', { n: items.length, size: bytes(zip.size) }));
+    } catch (e) {
+      toast(t('Falhou: {why}', { why: e.message || '?' }));
+    } finally {
+      a.zipping = false;
+      a.zipText = null;
+      a.sig = '';
+      this.renderAlbum(a);
+    }
+  }
+
+  save(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = name;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  }
+
+  async downloadEach(a) {
+    const items = this.albumItems(a).filter(x => x.state === 'done' && (x.download || x.blob));
+    for (const x of items) {
+      const link = document.createElement('a');
+      link.href = x.download || this.objUrl(x.blob); link.download = x.name;
+      document.body.appendChild(link); link.click(); link.remove();
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+
+  /** Como o visualizador mostra um item agora (arquivo inteiro, prévia desfocada ou progresso). */
+  viewItem(id) {
+    let x;
+    if (id.startsWith('ph:')) {
+      const k = id.slice(3, id.lastIndexOf(':'));
+      const a = this.albums.get(k);
+      x = a && this.albumItems(a)[Number(id.slice(id.lastIndexOf(':') + 1))];
+    } else {
+      const m = this.cardModels?.get(id) || this.models.get(id);
+      x = m && this.itemInfo(m);
+    }
+    if (!x) return null;
+    const ready = x.state === 'done' || (x.mine && !!x.blob);
+    const who = x.mine ? t('Você') : x.from || '';
+    return {
+      id, name: x.name, kind: x.kind, label: x.label,
+      src: ready ? x.full : null, poster: x.preview || x.thumb, blur: !x.preview,
+      status: ready ? '' : this.stateText(x),
+      href: !x.mine && x.state === 'done' ? x.download || null : null, download: x.name,
+      meta: [who, bytes(x.size)].filter(Boolean).join(' · ')
+    };
   }
 
   /** Bloco de velocidade: gráfico + velocidade atual + quanto falta. */
@@ -1180,7 +1641,12 @@ class RoomView {
       entry.meter.sample(stats.net, size ? stats.raw / size : 0);
       const box = entry.el.querySelector('.live');
       if (box) box.innerHTML = this.liveHTML(entry.meter, stats, size, tr);
+      const it = this.itemInfo(m);
+      this.updateRings(entry.el, [it]);
+      this.setComp(entry.el, it);
     }
+    for (const a of this.albums.values()) if (a.active) this.liveAlbum(a);
+    this.viewer?.refresh();
     for (const [id, up] of this.uploads) {
       if (up.state !== 'uploading') continue;
       let meter = this.upMeters.get(id);
@@ -1189,6 +1655,8 @@ class RoomView {
       meter.sample(stats.net, up.size ? stats.raw / up.size : 0);
       const box = document.querySelector(`[data-up="${CSS.escape(id)}"]`);
       if (box) box.innerHTML = this.liveHTML(meter, stats, up.size);
+      const row = box?.closest('li');
+      if (row) this.setComp(row, { comp: { raw: up.producedRaw, wire: up.producedWire, codec: up.gzip ? 'gzip' : 'none' } });
     }
   }
 
@@ -1198,6 +1666,7 @@ class RoomView {
     const m = this.cards.get(id)?.model;
     if (!m) return;
     const act = b.dataset.act;
+    if (act === 'view') { this.viewer.openWith([id], 0); return; }
     if (act === 'cancel') m.cancel?.();
     else if (act === 'pause') m.pause?.();
     else if (act === 'unpause') m.unpause?.();
@@ -1229,9 +1698,10 @@ class RoomView {
   // ----- QR, uso, configurações -----
   showQR() {
     const box = $('#qr-box');
-    if (!box.firstChild) box.innerHTML = qrSVG(shareUrl(this.room));
+    if (!box.firstChild) box.innerHTML = this.qr();
     $('#qr-dialog').showModal();
   }
+  qr() { return (this.qrCache ||= qrSVG(shareUrl(this.room))); }
 
   async loadUsage() {
     try {
@@ -1339,6 +1809,7 @@ class RoomView {
     this.mesh.close();
     this.client.close();
     try { this.codec.w?.terminate(); } catch { /* ok */ }
+    this.viewer.destroy();
     this.wakeLock?.release?.().catch(() => {});
   }
 }

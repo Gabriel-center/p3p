@@ -17,7 +17,12 @@ https://gabriel-center.github.io/p3p/?sala01
 - **Transferência direta:** blocos numerados com compressão Zstandard por bloco, com deflate como reserva. Retoma do último bloco confirmado quando a conexão cai.
   - **Nível automático:** começa no 3 (6 no relay). A cada segundo, compara a velocidade da rede com a da compressão: sobe de nível (6, 9, 12, 15, 19) quando a rede é o gargalo e o processador tem folga, e desce quando a compressão começa a segurar o envio. Em rede lenta, manda mais arquivo por segundo; em rede rápida, não atrasa nada.
   - **Blocos de 8 MB:** em arquivos a partir de 24 MB, o site testa uma amostra do meio. Se o nível 9 com bloco grande render bem mais que o normal (arquivos com partes repetidas, como backups e imagens de disco), usa blocos de 8 MB. No teste, um backup passou de 59% para 85% de economia.
+  - **Conferência sem perda:** antes de cada bloco vai o SHA-256 do bloco original. Quem recebe descompacta, calcula de novo e só grava se for igual; se não for, pede o bloco de novo (3 tentativas, depois o envio falha em vez de gravar dado errado). O cartão mostra "Idêntico ao original" quando todos os blocos bateram.
 - **Nuvem:** upload em partes de 8 MB, gzip quando compensa. O arquivo some 48 h depois do último acesso, e cada download renova o prazo.
+- **Compressão sempre à vista:** cada cartão (e cada arquivo guardado) mostra quanto foi comprimido, em % e em tamanho original → tamanho que passou pela rede, com o algoritmo usado.
+- **Fotos e vídeos:** a oferta leva uma miniatura de 96 px, então quem recebe já vê a prévia desfocada enquanto o arquivo chega, como no WhatsApp. Tocar na foto ou no vídeo abre o visualizador em tela cheia (setas, teclado, deslizar no celular, vídeo e áudio com play).
+- **Lotes:** vários arquivos enviados juntos viram um cartão só, com até 4 quadrados e "+N" no último, a lista completa e os botões "Baixar tudo (.zip)" e "Baixar separados". O zip é montado no próprio navegador (`assets/zip.js`, com ZIP64 para arquivos acima de 4 GB).
+- **Convite:** o QR code fica sempre na lateral (e na conversa vazia), mesmo com gente na sala, e abre grande ao tocar.
 - **Presença:** quem perde a conexão fica "ausente" por 30 s antes de sair da sala. Uma queda rápida de rede ou recarregar a página não aparece para os outros. Sair pela seta de voltar avisa na hora.
 - **Histórico:** local, no IndexedDB do navegador. Nunca vai para o servidor.
 - **Interface:** tema claro, escuro ou automático (escolha em Configurações, salva no aparelho). Fontes Red Hat servidas pelo próprio site.
@@ -63,15 +68,21 @@ Abra `http://127.0.0.1:8788/?teste` em duas abas anônimas.
 
 ```bash
 node worker/test/server.test.mjs                 # servidor: 14 cenários
+node test/lossless.test.mjs                      # compressão sem perda: zstd em todos os níveis, deflate, gzip, transferência completa e blocos corrompidos
+node test/zip.test.mjs                           # .zip do navegador conferido pelo Python e pelo unzip (normal e ZIP64)
+node test/adaptive.test.mjs                      # ajuste automático do nível de compressão
 node test/e2e.cjs <node_modules com puppeteer-core e @sparticuz/chromium> <pasta>
+CHROME=/usr/bin/google-chrome node test/e2e.cjs <node_modules com puppeteer-core> <pasta>   # com o Chrome instalado
 ```
 
 O teste ponta a ponta abre três navegadores e cobre:
 
 - conexão direta e mensagens
-- 10 MB comprimidos
+- QR code na lateral com gente na sala, e grande ao abrir
+- 10 MB comprimidos, com a linha de compressão e a conferência SHA-256 nos cartões
+- lote com fotos, vídeo e texto: álbum com "+N", miniaturas antes de chegar, visualizador (foto e vídeo tocando) e zip conferido
 - 60 MB com queda no meio e retomada
-- envio pela nuvem
+- envio pela nuvem, também em lote (álbum e zip baixando da nuvem)
 - arquivos guardados na sala
 - senha, painel de uso e "Apagar tudo"
 

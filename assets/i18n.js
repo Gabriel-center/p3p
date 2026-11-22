@@ -122,7 +122,27 @@ const EN = {
   "Mandar pela nuvem": "Send through the cloud",
   'nível {n}': 'level {n}', 'Aparência': 'Appearance', 'Automático': 'Automatic', 'Claro': 'Light', 'Escuro': 'Dark',
   'Tema: automático': 'Theme: automatic', 'Tema: claro': 'Theme: light', 'Tema: escuro': 'Theme: dark',
-  'Escolha o arquivo para guardar': 'Choose a file to store', 'Copiado': 'Copied', 'Copiar': 'Copy'
+  'Escolha o arquivo para guardar': 'Choose a file to store', 'Copiado': 'Copied', 'Copiar': 'Copy',
+  // convite
+  'Quem abrir este endereço entra na sala. No celular, aponte a câmera para o código.': 'Anyone who opens this address joins the room. On a phone, point the camera at the code.',
+  'Ampliar QR code': 'Enlarge QR code', 'Chamar mais aparelhos': 'Invite more devices', 'Ampliar': 'Enlarge', 'Ampliar código': 'Enlarge code',
+  'Aponte a câmera do celular para o código ou abra o mesmo endereço em outro aparelho.': 'Point a phone camera at the code or open the same address on another device.',
+  'Escreva uma mensagem ou arraste arquivos para cá. Para chamar mais aparelhos, use o código.': 'Write a message or drag files here. To invite more devices, use the code.',
+  // compressão e conferência
+  'Sem compressão (já é compactado)': 'Not compressed (already compressed)',
+  'Tamanho original → tamanho que passou pela rede': 'Original size → size sent over the network', 'até agora': 'so far',
+  'Cada bloco foi conferido com SHA-256 depois de descompactado.': 'Every block was checked with SHA-256 after decompression.',
+  'Idêntico ao original': 'Identical to the original', 'sem compressão': 'not compressed', 'comprimido {p}%': 'compressed {p}%',
+  // estados
+  'Conferido': 'Verified', 'Enviado': 'Sent', 'Pronto': 'Ready', 'Enviando': 'Sending', 'Recebendo': 'Receiving', 'Na fila': 'Queued',
+  'Pausado': 'Paused', 'A conexão caiu': 'Connection dropped', 'Parado': 'Stalled', 'Indo pela nuvem': 'Going through the cloud', 'Falhou': 'Failed',
+  // lotes
+  'Abrir {name}': 'Open {name}', 'Cancelar tudo': 'Cancel all', 'Baixar tudo (.zip)': 'Download all (.zip)', 'Baixar separados': 'Download one by one',
+  '{d} de {n} prontos': '{d} of {n} done', 'Todos enviados': 'All sent', 'Todos recebidos': 'All received', '{d} de {n} chegaram': '{d} of {n} arrived',
+  '{n} arquivos': '{n} files', 'Ver os {n} arquivos': 'See the {n} files', 'Baixando {name}': 'Downloading {name}', 'Compactando {p}%': 'Zipping {p}%',
+  'arquivos': 'files', 'Zip pronto: {n} arquivos, {size}': 'Zip ready: {n} files, {size}', 'Você': 'You',
+  // visualizador
+  'Visualizar': 'Viewer', 'Anterior': 'Previous', 'Próximo': 'Next'
 };
 
 export function t(s, vars) {

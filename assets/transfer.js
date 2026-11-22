@@ -4,9 +4,12 @@
 // Formato de cada pedaço binário (16 bytes de cabeçalho + dados):
 //   [0] 0xB1  [1] flags (1 = comprimido)  [2..3] pedaço  [4..7] nº da transferência
 //   [8..11] bloco  [12..13] total de pedaços do bloco  [14..15] reservado
-import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611122007';
-import { createSink } from './storage.js?v=202611122007';
-import { randomId } from './device.js?v=202611122007';
+// Antes dos pedaços de cada bloco vai {x:'sum', b, h} com o SHA-256 do bloco original. Quem recebe descompacta,
+// calcula o SHA-256 de novo e só grava se for igual; se não for, pede o bloco de novo (3 tentativas, depois falha).
+// Assim cada arquivo chega byte a byte igual ao original, com ou sem compressão.
+import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611222354';
+import { createSink } from './storage.js?v=202611222354';
+import { randomId } from './device.js?v=202611222354';
 
 const HIGH_WATER = 8 * 1024 * 1024;
 const PREFETCH = 3;
@@ -87,6 +90,43 @@ export function likelyCompressed(file) {
   return SKIP_TYPES.test(file.type || '') || SKIP_EXT.test(file.name || '');
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** SHA-256 em hexadecimal, ou null onde o navegador não oferece (página fora de https). */
+export async function sha256(u8) {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null;
+  try {
+    const h = new Uint8Array(await subtle.digest('SHA-256', u8));
+    let s = '';
+    for (const b of h) s += b.toString(16).padStart(2, '0');
+    return s;
+  } catch { return null; }
+}
+
+// ---------- dados extras da oferta: lote, miniatura, dimensões ----------
+const ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+export function cleanThumb(s) {
+  return typeof s === 'string' && s.length < 48000 && /^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/.test(s) ? s : null;
+}
+export function cleanMedia(m) {
+  if (!m || typeof m !== 'object') return null;
+  const n = (x, max) => (Number.isFinite(+x) && +x > 0 ? Math.min(max, +x) : 0);
+  return { w: n(m.w, 1e5), h: n(m.h, 1e5), dur: n(m.dur, 1e7) };
+}
+/** Lote: id, posição (i) e total (n). items = lista de todos os arquivos do lote (nome, tamanho, tipo e, nos 4 primeiros, miniatura). */
+export function cleanBatch(b) {
+  if (!b || typeof b !== 'object' || !ID_RE.test(String(b.id))) return null;
+  const n = Math.min(10000, Math.max(1, Math.floor(+b.n) || 1));
+  const i = Math.max(0, Math.floor(+b.i) || 0);
+  if (i >= n) return null;
+  const items = Array.isArray(b.items) ? b.items.slice(0, 300).map(x => ({
+    name: String(x?.name || 'arquivo').slice(0, 200), size: Math.max(0, +x?.size || 0), type: String(x?.type || '').slice(0, 120),
+    thumb: cleanThumb(x?.thumb), media: cleanMedia(x?.media)
+  })) : null;
+  return { id: String(b.id), i, n, items };
+}
+
 // ---------- gerente ----------
 export class Transfers extends EventTarget {
   constructor(mesh, codec) {
@@ -138,8 +178,10 @@ export class Transfers extends EventTarget {
         return;
       }
       case 'accept': if (o && o.peerId === peerId) o.onAccept(Number(m.from) || 0); return;
-      case 'ack': if (o && o.peerId === peerId) o.onAck(Number(m.upto) || 0); return;
-      case 'done': if (o && o.peerId === peerId) o.onDone(); return;
+      case 'ack': if (o && o.peerId === peerId) o.onAck(Number(m.upto) || 0, m.v); return;
+      case 'done': if (o && o.peerId === peerId) o.onDone(m.v); return;
+      case 'sum': if (i && i.peerId === peerId) i.onSum(m.b, m.h); return;
+      case 'fail': if (o && o.peerId === peerId) o.fail(String(m.why || '?').slice(0, 40)); return;
       case 'resume': {
         if (!i) { this.mesh.send(peerId, JSON.stringify({ x: 'unknown', id: m.id })); return; }
         if (i.state === 'done') { this.mesh.send(peerId, JSON.stringify({ x: 'done', id: m.id })); return; }
@@ -219,6 +261,11 @@ export class Outgoing {
     this.type = file.type || '';
     this.peerId = peerId;
     this.peerName = info.peerName || '';
+    this.batch = info.batch || null;     // { id, i, n, items }
+    this.metaP = info.meta || null;      // Promise → { thumb, media, batch }
+    this.thumb = null;
+    this.media = null;
+    this.verified = null;     // blocos que o outro lado conferiu (null = aparelho sem conferência)
     this.blockSize = BLOCK_SIZE;
     this.blocks = Math.ceil(file.size / BLOCK_SIZE);
     this.state = 'queued';
@@ -244,6 +291,8 @@ export class Outgoing {
 
   get done() { return Math.min(this.size, this.acked * this.blockSize); }
   get ratio() { return this.raw ? this.wire / this.raw : 1; }
+  /** O destinatário conferiu o SHA-256 de todos os blocos. */
+  get intact() { return this.state === 'done' && this.verified !== null && this.verified >= this.blocks; }
 
   /** Bytes que já saíram pela rede e a posição correspondente no arquivo. */
   liveStats() {
@@ -265,6 +314,12 @@ export class Outgoing {
   async start() {
     this.state = 'preparing';
     this.mgr.changed(this);
+    if (this.metaP) {
+      // Miniatura e dimensões vão junto na oferta, para o outro lado já mostrar a prévia. Não espera mais que 4 s.
+      const x = await Promise.race([this.metaP.catch(() => null), sleep(4000)]);
+      if (x) { this.thumb = x.thumb || null; this.media = x.media || null; if (x.batch) this.batch = x.batch; }
+      if (this.state !== 'preparing') return;
+    }
     const local = await this.mgr.codec.capsP;
     const remote = this.mgr.mesh.remoteCaps(this.peerId)?.codecs || [];
     const common = ['zstd', 'deflate'].find(c => local.includes(c) && remote.includes(c));
@@ -276,6 +331,7 @@ export class Outgoing {
     this.blocks = Math.ceil(this.size / this.blockSize);
     this.compressionSkipped = this.codec === 'none';
     this.alreadyCompressed = likelyCompressed(this.file);
+    if (this.state !== 'preparing') return;   // cancelado enquanto preparava
     this.sendOffer();
   }
 
@@ -312,17 +368,27 @@ export class Outgoing {
     }
     if (firstOk) {
       this.codec = codec;
-      this.cache.set(0, Promise.resolve({ data: c, compressed: true, rawLen: first.byteLength, level: this.level }));
+      const hash = await sha256(first);
+      this.cache.set(0, Promise.resolve({ data: c, compressed: true, rawLen: first.byteLength, level: this.level, hash }));
     }
   }
 
   sendOffer() {
     this.state = 'waiting';
     this.mgr.changed(this);
-    this.mgr.mesh.send(this.peerId, JSON.stringify({
+    const offer = {
       x: 'offer', id: this.id, num: this.num, name: this.name, size: this.size, type: this.type,
-      blocks: this.blocks, blockSize: this.blockSize, codec: this.codec
-    }));
+      blocks: this.blocks, blockSize: this.blockSize, codec: this.codec,
+      batch: this.batch, thumb: this.thumb, media: this.media
+    };
+    let json = JSON.stringify(offer);
+    // O WebRTC aceita mensagens de até 256 KB: lotes enormes vão sem as miniaturas da lista, ou sem a lista.
+    if (json.length > 200000 && offer.batch?.items) {
+      offer.batch = { ...offer.batch, items: offer.batch.items.map(x => ({ ...x, thumb: null })) };
+      json = JSON.stringify(offer);
+      if (json.length > 200000) { offer.batch = { ...offer.batch, items: null }; json = JSON.stringify(offer); }
+    }
+    this.mgr.mesh.send(this.peerId, json);
   }
 
   onAccept(from) {
@@ -343,6 +409,7 @@ export class Outgoing {
     const p = (async () => {
       const start = b * this.blockSize;
       const raw = new Uint8Array(await this.file.slice(start, Math.min(this.size, start + this.blockSize)).arrayBuffer());
+      const hashP = sha256(raw);
       if (this.codec !== 'none') {
         const level = this.level;
         try {
@@ -351,10 +418,10 @@ export class Outgoing {
             const rate = raw.byteLength / (c.ms / 1000);
             this.cpu[level] = this.cpu[level] ? this.cpu[level] * 0.6 + rate * 0.4 : rate;
           }
-          if (c.byteLength < raw.byteLength * 0.97) return { data: c, compressed: true, rawLen: raw.byteLength, level };
+          if (c.byteLength < raw.byteLength * 0.97) return { data: c, compressed: true, rawLen: raw.byteLength, level, hash: await hashP };
         } catch { /* manda sem compressão */ }
       }
-      return { data: raw, compressed: false, rawLen: raw.byteLength };
+      return { data: raw, compressed: false, rawLen: raw.byteLength, hash: await hashP };
     })();
     this.cache.set(b, p);
     return p;
@@ -379,6 +446,7 @@ export class Outgoing {
       const frames = Math.max(1, Math.ceil(data.byteLength / FRAME_SIZE));
       const flags = payload.compressed ? 1 : 0;
       try {
+        if (payload.hash) dc.send(JSON.stringify({ x: 'sum', id: this.id, b, h: payload.hash }));
         for (let f = 0; f < frames; f++) {
           const part = data.subarray(f * FRAME_SIZE, Math.min(data.byteLength, (f + 1) * FRAME_SIZE));
           const msg = new Uint8Array(16 + part.byteLength);
@@ -428,7 +496,8 @@ export class Outgoing {
     }
   }
 
-  onAck(upto) {
+  onAck(upto, v) {
+    if (Number.isFinite(v)) this.verified = Math.max(this.verified || 0, v);
     if (upto <= this.acked) return;
     this.acked = upto;
     const now = Date.now(), bytes = this.done;
@@ -442,7 +511,8 @@ export class Outgoing {
     this.mgr.changed(this);
   }
 
-  onDone() {
+  onDone(v) {
+    if (Number.isFinite(v)) this.verified = Math.max(this.verified || 0, v);
     if (this.state === 'done') return;
     this.acked = this.blocks;
     this.state = 'done';
@@ -534,7 +604,7 @@ export class Outgoing {
 }
 
 // ---------- recebimento ----------
-class Incoming {
+export class Incoming {
   constructor(mgr, peerId, m) {
     this.mgr = mgr;
     this.dir = 'in';
@@ -547,6 +617,12 @@ class Incoming {
     this.blocks = Math.max(0, Number(m.blocks) || 0);
     this.blockSize = Math.min(16 * 1024 * 1024, Number(m.blockSize) || BLOCK_SIZE);
     this.codec = ['zstd', 'deflate'].includes(m.codec) ? m.codec : 'none';
+    this.batch = cleanBatch(m.batch);
+    this.thumb = cleanThumb(m.thumb);
+    this.media = cleanMedia(m.media);
+    this.sums = new Map();   // bloco → SHA-256 esperado
+    this.verified = 0;       // blocos conferidos
+    this.bad = 0;            // blocos que chegaram diferentes do original
     this.written = 0;
     this.wire = 0;
     this.partial = null;
@@ -562,6 +638,13 @@ class Incoming {
   }
 
   get done() { return Math.min(this.size, this.written * this.blockSize); }
+  /** Todos os blocos conferidos com o SHA-256 do original. */
+  get intact() { return this.state === 'done' && this.verified >= this.blocks; }
+
+  onSum(b, h) {
+    b = Number(b);
+    if (typeof h === 'string' && /^[0-9a-f]{64}$/.test(h) && Number.isInteger(b) && b >= this.written) this.sums.set(b, h);
+  }
 
   liveStats() {
     const ratio = this.codec === 'none' || !this.wireDone ? 1 : this.done / this.wireDone;
@@ -592,7 +675,29 @@ class Incoming {
     if (this.partial.parts.length < h.frames) return;
     let data = concat(this.partial.parts);
     this.partial = null;
-    if (h.flags & 1) data = await this.mgr.codec.decompress(data, this.codec);
+    const want = this.sums.get(h.block);
+    let ok = true;
+    if (h.flags & 1) {
+      try { data = await this.mgr.codec.decompress(data, this.codec); }
+      catch (e) { if (!want) throw e; ok = false; }
+    }
+    let got = null;
+    if (ok && want) { got = await sha256(data); if (got && got !== want) ok = false; }
+    if (!ok) {
+      // Chegou diferente do original: descarta e pede o mesmo bloco de novo.
+      this.bad++;
+      this.blockWire = 0;
+      if (this.bad >= 3) {
+        this.mgr.mesh.send(this.peerId, JSON.stringify({ x: 'fail', id: this.id, why: 'checksum' }));
+        this.fail('checksum');
+        return;
+      }
+      this.mgr.mesh.send(this.peerId, JSON.stringify({ x: 'accept', id: this.id, from: this.written }));
+      return;
+    }
+    if (got) this.verified++;
+    this.sums.delete(h.block);
+    if (data.byteLength !== Math.min(this.blockSize, this.size - h.block * this.blockSize)) throw new Error('tamanho');
     await this.sink.write(h.block * this.blockSize, data);
     this.written++;
     const now = Date.now();
@@ -606,7 +711,7 @@ class Incoming {
     this.wireDone += this.blockWire;
     this.blockWire = 0;
     // Confirma cada bloco: quem envia vê o progresso real e sabe de onde retomar.
-    this.mgr.mesh.send(this.peerId, JSON.stringify({ x: 'ack', id: this.id, upto: this.written }));
+    this.mgr.mesh.send(this.peerId, JSON.stringify({ x: 'ack', id: this.id, upto: this.written, v: this.verified }));
     if (this.written === this.blocks) await this.finish();
   }
 
@@ -616,7 +721,7 @@ class Incoming {
     this.url = URL.createObjectURL(blob);
     this.state = 'done';
     this.finishedAt = Date.now();
-    this.mgr.mesh.send(this.peerId, JSON.stringify({ x: 'done', id: this.id }));
+    this.mgr.mesh.send(this.peerId, JSON.stringify({ x: 'done', id: this.id, v: this.verified }));
     this.mgr.changed(this);
   }
 
