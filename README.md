@@ -27,6 +27,14 @@ https://gabriel-center.github.io/p3p/?sala01
 - **Histórico:** local, no IndexedDB do navegador. Nunca vai para o servidor.
 - **Interface:** tema claro, escuro ou automático (escolha em Configurações, salva no aparelho). Fontes Red Hat servidas pelo próprio site.
 
+## Versão "vidro"
+
+`vidro/index.html` (no ar em `/p3p/vidro/`) é o mesmo site com outra identidade visual: material de vidro translúcido sobre o conteúdo, cápsulas, cantos concêntricos, cores e fonte do sistema (San Francisco nos aparelhos que a têm, Inter nos outros). No celular, barra de navegação e barra de abas flutuantes, com o campo de envio logo acima; no computador, barra lateral e inspetor flutuando. Usa o mesmo código, servidor e salas: abrir `?sala` nas duas versões coloca as duas na mesma sala.
+
+- Estilo: `assets/vidro.css`, carregado depois de `assets/app.css`. Todas as regras começam com `html[data-skin="vidro"]`.
+- Comportamento: igual. O `app.js` só troca ícones, a marca e pequenos trechos de HTML quando a página tem `data-skin="vidro"`.
+- Fonte Inter (OFL): `assets/fonts/inter-*.woff2`, licença em `assets/fonts/LICENSE-inter.txt`.
+
 ## Publicar
 
 ### 1. Site (GitHub Pages)

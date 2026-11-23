@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
 const v = new Date().toISOString().replace(/\D/g, '').slice(0, 12);
-const files = ['index.html', ...readdirSync(join(root, 'assets')).filter(f => f.endsWith('.js')).map(f => `assets/${f}`)];
+const files = ['index.html', 'vidro/index.html', ...readdirSync(join(root, 'assets')).filter(f => f.endsWith('.js')).map(f => `assets/${f}`)];
 
 for (const f of files) {
   const p = join(root, f);
@@ -15,8 +15,8 @@ for (const f of files) {
   let s = before
     // import ... from './x.js' e import('./x.js') entre módulos do site
     .replace(/((?:from|import)\s*\(?\s*['"])(\.\/[\w-]+\.js)(?:\?v=\w+)?(['"])/g, `$1$2?v=${v}$3`)
-    // index.html: assets/app.js, assets/app.css
-    .replace(/(["'])(assets\/(?:app\.js|app\.css))(?:\?v=\w+)?(["'])/g, `$1$2?v=${v}$3`);
+    // index.html e vidro/index.html: assets/app.js, assets/app.css, ../assets/vidro.css
+    .replace(/(["'])((?:\.\.\/)?assets\/(?:app\.js|app\.css|vidro\.css))(?:\?v=\w+)?(["'])/g, `$1$2?v=${v}$3`);
   if (s !== before) writeFileSync(p, s);
 }
 console.log(`versão ${v}`);

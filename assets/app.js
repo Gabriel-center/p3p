@@ -1,17 +1,17 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611222354';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611222354';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611222354';
-import { RoomClient } from './room-client.js?v=202611222354';
-import { Mesh } from './mesh.js?v=202611222354';
-import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611222354';
-import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611222354';
-import { makeZip } from './zip.js?v=202611222354';
-import { Viewer } from './viewer.js?v=202611222354';
-import { CloudUpload, downloadUrl } from './cloud.js?v=202611222354';
-import { cleanupOld } from './storage.js?v=202611222354';
-import { SpeedMeter } from './speed.js?v=202611222354';
-import * as hist from './history.js?v=202611222354';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611232152';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611232152';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611232152';
+import { RoomClient } from './room-client.js?v=202611232152';
+import { Mesh } from './mesh.js?v=202611232152';
+import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611232152';
+import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611232152';
+import { makeZip } from './zip.js?v=202611232152';
+import { Viewer } from './viewer.js?v=202611232152';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611232152';
+import { cleanupOld } from './storage.js?v=202611232152';
+import { SpeedMeter } from './speed.js?v=202611232152';
+import * as hist from './history.js?v=202611232152';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
@@ -60,7 +60,33 @@ const ICON = {
   expand: svg('<path d="M4 9.5V4h5.5M20 9.5V4h-5.5M4 14.5V20h5.5M20 14.5V20h-5.5"/>'),
   stack: svg('<rect x="3.5" y="7.5" width="13" height="13" rx="2"/><path d="M7.5 4h11A2.5 2.5 0 0 1 21 6.5v11"/>')
 };
-const MARK = `<svg class="mark" viewBox="0 0 30 18" aria-hidden="true"><line class="l" x1="9" y1="9" x2="21" y2="9"/><circle class="a" cx="7" cy="9" r="6"/><circle class="b" cx="23.5" cy="9" r="4.8"/></svg>`;
+// Versão "vidro" (vidro/index.html, data-skin="vidro"): mesma sala e mesmo código, outra identidade visual.
+// Só troca ícones, a marca e pequenos trechos de HTML; o resto é assets/vidro.css.
+const SKIN = document.documentElement.dataset.skin || '';
+const VIDRO = SKIN === 'vidro';
+if (VIDRO) Object.assign(ICON, {
+  send: svg('<path d="M12 18.5V6M6.5 11.5L12 6l5.5 5.5"/>'),
+  clip: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
+  share: svg('<path d="M12 3.8v10.7M8.2 7.3L12 3.8l3.8 3.5"/><path d="M8.8 10.2H7.4A1.9 1.9 0 0 0 5.5 12.1v6a1.9 1.9 0 0 0 1.9 1.9h9.2a1.9 1.9 0 0 0 1.9-1.9v-6a1.9 1.9 0 0 0-1.9-1.9h-1.4"/>'),
+  back: svg('<path d="M14.5 5.5L8 12l6.5 6.5"/>'),
+  gear: svg('<circle cx="6" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.5" fill="currentColor" stroke="none"/>'),
+  bubble: svg('<path d="M12 4.5c4.7 0 8.5 3.1 8.5 7s-3.8 7-8.5 7c-1 0-1.9-.1-2.8-.4L5 20l1.2-3.6C4.5 15.1 3.5 13.4 3.5 11.5c0-3.9 3.8-7 8.5-7z"/>'),
+  devices: svg('<rect x="2.5" y="5" width="13.5" height="9.5" rx="1.6"/><path d="M1.5 18h11"/><rect x="17" y="8" width="5.5" height="11" rx="1.4"/>'),
+  tray: svg('<path d="M3.8 13.5l2.3-6.9A1.6 1.6 0 0 1 7.6 5.5h8.8a1.6 1.6 0 0 1 1.5 1.1l2.3 6.9v4.4a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M3.8 13.5h4.5l1.2 2.2h5l1.2-2.2h4.5"/>'),
+  bolt: svg('<path d="M13.2 2.8L5.6 13.4h6L10.8 21.2l7.6-10.6h-6z" fill="currentColor" stroke="none"/>'),
+  relay: svg('<path d="M4 8.5h13.5M14 5l3.5 3.5L14 12M20 15.5H6.5M10 12l-3.5 3.5L10 19"/>'),
+  history: svg('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 8.9"/><path d="M4.5 4.5v4.4h4.4M12 8v4.2l2.8 1.8"/>')
+});
+// Ícone de app: quadrado de cantos contínuos, azul, com os dois aparelhos ligados em vidro.
+const APPICON = `<svg class="appicon" viewBox="0 0 64 64" aria-hidden="true"><defs>
+  <linearGradient id="ai-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5BC4FF"/><stop offset="1" stop-color="#0A6CFF"/></linearGradient>
+  <linearGradient id="ai-hi" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+  <rect width="64" height="64" rx="14.5" fill="url(#ai-bg)"/><rect x=".6" y=".6" width="62.8" height="62.8" rx="14" fill="none" stroke="url(#ai-hi)" stroke-width="1.2"/>
+  <path d="M26 32h12" stroke="#fff" stroke-opacity=".9" stroke-width="3" stroke-linecap="round" stroke-dasharray=".1 5.2"/>
+  <circle cx="20" cy="32" r="9.5" fill="#fff"/><circle cx="44.5" cy="32" r="7.6" fill="#fff" fill-opacity=".28" stroke="#fff" stroke-width="3.2"/>
+  <ellipse cx="17.6" cy="28.4" rx="4.2" ry="2.4" fill="#BFE6FF" fill-opacity=".9"/></svg>`;
+const MARK = VIDRO ? APPICON : `<svg class="mark" viewBox="0 0 30 18" aria-hidden="true"><line class="l" x1="9" y1="9" x2="21" y2="9"/><circle class="a" cx="7" cy="9" r="6"/><circle class="b" cx="23.5" cy="9" r="4.8"/></svg>`;
+const pathMark = k => VIDRO ? `<span class="sq ${k}">${ICON[{ direct: 'bolt', relay: 'relay', server: 'cloud' }[k]]}</span>` : `<i class="trace ${k}"></i>`;
 
 const PATH_LABEL = p => ({ direct: t('Direto'), relay: t('Relay'), server: t('Nuvem'), reconnecting: t('Reconectando'), connecting: t('Conectando') })[p] || p;
 const PATH_TIP = p => ({ direct: t('Conexão direta entre os aparelhos'), relay: t('Passa pelo TURN da Cloudflare'), server: t('Sem conexão direta: arquivos vão pela nuvem'), reconnecting: t('A conexão caiu e está voltando'), connecting: t('Procurando o melhor caminho') })[p] || '';
@@ -89,7 +115,7 @@ function applyTheme(th) {
   if (th === 'auto') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = th;
   const dark = th === 'dark' || (th === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-  $$('meta[name="theme-color"]').forEach(m => { m.content = dark ? '#121b2b' : '#ffffff'; m.removeAttribute('media'); });
+  $$('meta[name="theme-color"]').forEach(m => { m.content = VIDRO ? (dark ? '#000000' : '#f2f2f7') : dark ? '#121b2b' : '#ffffff'; m.removeAttribute('media'); });
   $$('[data-theme-set]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.themeSet === th)));
 }
 function themeButton() {
@@ -211,6 +237,7 @@ async function renderHome() {
       </div>
       <div class="hero">
         <div>
+          ${VIDRO ? `<div class="hero-icon">${APPICON}</div>` : ''}
           <h1>${esc(t('Abra uma sala.'))}</h1>
           <p class="lede">${esc(t('Quem abrir o mesmo endereço entra na mesma sala. Mande mensagens e arquivos entre seus aparelhos, direto de um para o outro sempre que a rede deixar.'))}</p>
           <form id="home-form" autocomplete="off">
@@ -225,12 +252,12 @@ async function renderHome() {
             </div>
           </form>
         </div>
-        ${heroViz()}
+        ${VIDRO ? '' : heroViz()}
       </div>
       <div class="paths">
-        <div><h3 class="direct"><i class="trace direct"></i><span style="color:var(--ink)">${esc(t('Direto'))}</span></h3><p>${esc(t('Os arquivos vão de um aparelho para o outro, sem passar por servidor. É o caminho mais rápido.'))}</p></div>
-        <div><h3 class="relay"><i class="trace relay"></i><span style="color:var(--ink)">${esc(t('Relay'))}</span></h3><p>${esc(t('Quando a rede bloqueia a conexão direta, a Cloudflare repassa os dados sem guardar nada.'))}</p></div>
-        <div><h3 class="server"><i class="trace server"></i><span style="color:var(--ink)">${esc(t('Nuvem'))}</span></h3><p>${esc(t('Sem nenhum dos dois, o arquivo fica guardado na sala por 48 h para quem baixar depois.'))}</p></div>
+        <div><h3 class="direct">${pathMark('direct')}<span style="color:var(--ink)">${esc(t('Direto'))}</span></h3><p>${esc(t('Os arquivos vão de um aparelho para o outro, sem passar por servidor. É o caminho mais rápido.'))}</p></div>
+        <div><h3 class="relay">${pathMark('relay')}<span style="color:var(--ink)">${esc(t('Relay'))}</span></h3><p>${esc(t('Quando a rede bloqueia a conexão direta, a Cloudflare repassa os dados sem guardar nada.'))}</p></div>
+        <div><h3 class="server">${pathMark('server')}<span style="color:var(--ink)">${esc(t('Nuvem'))}</span></h3><p>${esc(t('Sem nenhum dos dois, o arquivo fica guardado na sala por 48 h para quem baixar depois.'))}</p></div>
       </div>
       <div class="recents">
         <h2 class="sec-title">${esc(t('Salas recentes neste aparelho'))}</h2>
@@ -395,9 +422,9 @@ class RoomView {
       </header>
       <div class="conn-banner gutter" id="conn-banner" hidden></div>
       <div class="room-tabs gutter" role="tablist">
-        <button role="tab" data-tab="feed">${esc(t('Conversa'))}<span class="dot" id="feed-dot" hidden></span></button>
-        <button role="tab" data-tab="devices">${esc(t('Aparelhos'))}<span class="count tnum" id="dev-count">1</span></button>
-        <button role="tab" data-tab="files">${esc(t('Guardados'))}<span class="count tnum" id="file-count">0</span></button>
+        <button role="tab" data-tab="feed">${VIDRO ? ICON.bubble : ''}<span class="tl">${esc(t('Conversa'))}</span><span class="dot" id="feed-dot" hidden></span></button>
+        <button role="tab" data-tab="devices">${VIDRO ? ICON.devices : ''}<span class="tl">${esc(t('Aparelhos'))}</span><span class="count tnum" id="dev-count">1</span></button>
+        <button role="tab" data-tab="files">${VIDRO ? ICON.tray : ''}<span class="tl">${esc(t('Guardados'))}</span><span class="count tnum" id="file-count">0</span></button>
       </div>
       <div class="room-body">
         <aside class="pane pane-devices" data-pane="devices"><div class="pane-inner gutter" id="devices-pane"></div></aside>
