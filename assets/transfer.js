@@ -7,9 +7,9 @@
 // Antes dos pedaços de cada bloco vai {x:'sum', b, h} com o SHA-256 do bloco original. Quem recebe descompacta,
 // calcula o SHA-256 de novo e só grava se for igual; se não for, pede o bloco de novo (3 tentativas, depois falha).
 // Assim cada arquivo chega byte a byte igual ao original, com ou sem compressão.
-import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611232152';
-import { createSink } from './storage.js?v=202611232152';
-import { randomId } from './device.js?v=202611232152';
+import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611232247';
+import { createSink } from './storage.js?v=202611232247';
+import { randomId } from './device.js?v=202611232247';
 
 const HIGH_WATER = 8 * 1024 * 1024;
 const PREFETCH = 3;

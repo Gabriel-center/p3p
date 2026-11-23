@@ -27,12 +27,20 @@ https://gabriel-center.github.io/p3p/?sala01
 - **Histórico:** local, no IndexedDB do navegador. Nunca vai para o servidor.
 - **Interface:** tema claro, escuro ou automático (escolha em Configurações, salva no aparelho). Fontes Red Hat servidas pelo próprio site.
 
-## Versão "vidro"
+## Visual e versão de teste
 
-`vidro/index.html` (no ar em `/p3p/vidro/`) é o mesmo site com outra identidade visual: material de vidro translúcido sobre o conteúdo, cápsulas, cantos concêntricos, cores e fonte do sistema (San Francisco nos aparelhos que a têm, Inter nos outros). No celular, barra de navegação e barra de abas flutuantes, com o campo de envio logo acima; no computador, barra lateral e inspetor flutuando. Usa o mesmo código, servidor e salas: abrir `?sala` nas duas versões coloca as duas na mesma sala.
+O site principal (`/p3p/`) usa o visual "vidro": material translúcido sobre o conteúdo, cápsulas, cantos concêntricos, cores e fonte do sistema (San Francisco nos aparelhos que a têm, Inter nos outros). No celular, barra de navegação e barra de abas flutuantes, com o campo de envio logo acima; no computador, barra lateral e inspetor flutuando.
 
-- Estilo: `assets/vidro.css`, carregado depois de `assets/app.css`. Todas as regras começam com `html[data-skin="vidro"]`.
-- Comportamento: igual. O `app.js` só troca ícones, a marca e pequenos trechos de HTML quando a página tem `data-skin="vidro"`.
+- Estilo: `assets/vidro.css`, carregado depois de `assets/app.css`. Todas as regras começam com `html[data-skin="vidro"]` (o `index.html` tem `data-skin="vidro"`).
+- O `app.js` só troca ícones, a marca e pequenos trechos de HTML quando a página tem `data-skin="vidro"`.
+
+`vidro/index.html` (no ar em `/p3p/vidro/`) é a versão de teste: o mesmo site, mais `data-next`, que carrega `assets/next.js` e `assets/vidro-next.css`. Usa o mesmo servidor e as mesmas salas: abrir `?sala` nas duas versões coloca as duas na mesma sala.
+
+- **Movimento:** a marca da aba selecionada desliza com mola (e dá para arrastar o dedo pela barra), mensagens e cartões entram animados, o brilho do vidro segue o dedo e o mouse, o botão de enviar só aparece com texto.
+- **Gestos:** deslizar a conversa para a esquerda mostra os horários; toque longo (ou botão direito) numa mensagem abre um menu; folhas fecham arrastando para baixo; no visualizador a foto cresce a partir do cartão e volta para ele, arrastar para baixo fecha, deslizar acompanha o dedo, pinça e dois toques dão zoom, um toque esconde as barras (`assets/viewer.js`, `assets/motion.js`).
+- **Computador:** ⌘K / Ctrl+K abre a busca de comandos (também entra em salas pelo nome), `/` vai para o campo de mensagem, arrastar arquivos sobre um aparelho da lista manda só para ele, anel de progresso no avatar de quem está mandando ou recebendo.
+- **App:** instalável (`vidro/manifest.webmanifest`, `vidro/sw.js`, ícones em `vidro/icons/`). No Android aparece no "Compartilhar" de outros apps: o service worker guarda os arquivos e a página pergunta para qual sala mandar. No iPhone o botão "Instalar" explica o caminho pelo Compartilhar do Safari (o iOS não deixa sites receberem arquivos pelo Compartilhar). O service worker também abre o site sem internet.
+- **Leitor de QR:** "Ler QR code" no início (e na busca de comandos) usa a câmera; lê com o `BarcodeDetector` do navegador ou, onde não há, com o jsQR (`assets/vendor/jsqr`, carregado só quando precisa).
 - Fonte Inter (OFL): `assets/fonts/inter-*.woff2`, licença em `assets/fonts/LICENSE-inter.txt`.
 
 ## Publicar
@@ -81,6 +89,7 @@ node test/zip.test.mjs                           # .zip do navegador conferido p
 node test/adaptive.test.mjs                      # ajuste automático do nível de compressão
 node test/e2e.cjs <node_modules com puppeteer-core e @sparticuz/chromium> <pasta>
 CHROME=/usr/bin/google-chrome node test/e2e.cjs <node_modules com puppeteer-core> <pasta>   # com o Chrome instalado
+CHROME=/usr/bin/google-chrome node test/vidro.e2e.cjs <node_modules com puppeteer-core> <pasta> [qr.y4m]   # versão de teste: gestos, ⌘K, compartilhar, leitor de QR
 ```
 
 O teste ponta a ponta abre três navegadores e cobre:
@@ -109,6 +118,8 @@ Os valores ficam em `wrangler.jsonc`.
 
 - `assets/vendor/zstd`: @bokuweb/zstd-wasm (MIT) e Zstandard (BSD)
 - `assets/vendor/qrcode`: qrcode-generator (MIT)
+- `assets/vendor/jsqr`: jsQR 1.4.0 (Apache-2.0, licença em `assets/vendor/jsqr/LICENSE`)
+- `assets/fonts/inter-*`: Inter (OFL, `assets/fonts/LICENSE-inter.txt`)
 
 ## Atualizar o site
 

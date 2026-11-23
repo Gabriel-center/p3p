@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR" data-skin="vidro">
+<html lang="pt-BR" data-skin="vidro" data-next>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
@@ -10,20 +10,24 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="referrer" content="no-referrer">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-title" content="p3p">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%235BC4FF'/%3E%3Cstop offset='1' stop-color='%230A6CFF'/%3E%3C/linearGradient%3E%3Crect width='64' height='64' rx='14.5' fill='url(%23g)'/%3E%3Ccircle cx='20' cy='32' r='9.5' fill='%23fff'/%3E%3Ccircle cx='44.5' cy='32' r='7.6' fill='%23fff' fill-opacity='.28' stroke='%23fff' stroke-width='3.2'/%3E%3C/svg%3E">
   <script>
     // Tema escolhido (claro/escuro) antes de pintar a página, para não piscar.
     try { var th = localStorage.getItem('p2p.theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="../assets/app.css?v=202611232152">
-  <link rel="stylesheet" href="../assets/vidro.css?v=202611232152">
-  <link rel="modulepreload" href="../assets/app.js?v=202611232152">
+  <link rel="stylesheet" href="../assets/app.css?v=202611232247">
+  <link rel="stylesheet" href="../assets/vidro.css?v=202611232247">
+  <link rel="stylesheet" href="../assets/vidro-next.css?v=202611232247">
+  <link rel="modulepreload" href="../assets/app.js?v=202611232247">
 </head>
 <body>
   <div id="app"></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <noscript><p style="padding:24px">Este site precisa de JavaScript para funcionar.</p></noscript>
   <script src="../assets/vendor/qrcode/qrcode.js"></script>
-  <script type="module" src="../assets/app.js?v=202611232152"></script>
+  <script type="module" src="../assets/app.js?v=202611232247"></script>
 </body>
 </html>

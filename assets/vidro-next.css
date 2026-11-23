@@ -1,0 +1,216 @@
+/* p3p · vidro (teste) — camada carregada só em vidro/index.html (data-next), por cima de vidro.css.
+   Movimento, gestos, busca de comandos, leitor de QR, instalar e ajustes para cada tamanho de tela. */
+
+/* ---------- brilho do vidro seguindo o mouse / o dedo ---------- */
+html[data-next] .room-tabs, html[data-next] .head-actions, html[data-next] .home-link, html[data-next] .topline > div, html[data-next] #attach, html[data-next] .composer textarea, html[data-next] .urlfield, html[data-next] dialog:not(.viewer):not(.scanner), html[data-next] .toast,
+html[data-next] .pane-devices, html[data-next] .pane-files {
+  background-image: radial-gradient(360px circle at var(--mx, -999px) var(--my, -999px), var(--glint), transparent 55%);
+  background-attachment: fixed;
+}
+html[data-next] { --glint: rgba(255, 255, 255, 0.55); }
+html[data-next][data-theme="dark"] { --glint: rgba(255, 255, 255, 0.09); }
+@media (prefers-color-scheme: dark) { html[data-next]:not([data-theme="light"]) { --glint: rgba(255, 255, 255, 0.09); } }
+
+/* ---------- barra de abas: marca que desliza ---------- */
+html[data-next] .room-tabs { isolation: isolate; }   /* a barra já é absolute no celular (vidro.css): a marca se posiciona nela */
+html[data-next] .room-tabs .lens { display: none; }
+@container room (max-width: 680px) {
+  html[data-next] .room-tabs .lens {
+    display: block; position: absolute; z-index: -1; left: 0; top: 4px; bottom: 4px; width: 0; border-radius: 999px;
+    background: var(--fill-2); box-shadow: inset 0 1px 0.5px var(--glass-hi), inset 0 0 0 0.5px var(--glass-edge);
+    transition: transform .55s linear(0, 0.09, 0.32, 0.6, 0.84, 1.0, 1.07, 1.08, 1.06, 1.03, 1.01, 1, 0.995, 1), width .45s cubic-bezier(.32,.72,0,1), scale .3s cubic-bezier(.32,.72,0,1);
+  }
+  html[data-next] .room-tabs.pressing .lens { scale: 1.12 1.18; background: color-mix(in srgb, var(--glass-strong) 70%, var(--accent) 6%); box-shadow: inset 0 1px 0.5px var(--glass-hi), 0 6px 18px -6px rgba(0, 0, 0, 0.25); }
+  html[data-next] .room-tabs button[aria-selected="true"] { background: none; }
+  html[data-next] .room-tabs button { touch-action: none; -webkit-tap-highlight-color: transparent; }
+  html[data-next] .room-tabs button svg.i { transition: transform .35s cubic-bezier(.34, 1.56, .64, 1); }
+  html[data-next] .room-tabs button:active svg.i { transform: scale(.86); }
+}
+
+/* ---------- conversa ---------- */
+html[data-next] .feed { touch-action: pan-y; --rv: 0; }
+/* deslizar para a esquerda: as bolhas andam e a hora aparece na direita */
+html[data-next] .msg { position: relative; }
+html[data-next] .msg .row { transform: translateX(calc(var(--rv) * -1px)); transition: transform .45s linear(0, 0.12, 0.4, 0.7, 0.9, 1.01, 1.04, 1.03, 1.01, 1); }
+html[data-next] .msg:not(.mine) .row { transform: translateX(calc(var(--rv) * -0.35px)); }
+html[data-next] .feed.revealing .msg .row { transition: none; }
+html[data-next] .msg[data-t]::after {
+  content: attr(data-t); position: absolute; right: 0; bottom: 9px; font-size: 12px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums;
+  opacity: calc(var(--rv) / 64); transform: translateX(calc((64 - var(--rv)) * 1px)); transition: opacity .3s, transform .45s cubic-bezier(.32,.72,0,1); pointer-events: none;
+}
+html[data-next] .feed.revealing .msg[data-t]::after { transition: none; }
+html[data-next] .msg .body { transition: transform .25s cubic-bezier(.32,.72,0,1); -webkit-touch-callout: none; }
+html[data-next] .msg .body.pressing { transform: scale(.96); }
+@media (hover: none) { html[data-next] .msg .body { user-select: none; -webkit-user-select: none; } }
+
+/* toque longo: fundo desfocado, mensagem erguida e menu de vidro */
+html[data-next] .ctx { position: fixed; inset: 0; z-index: 60; background: color-mix(in srgb, var(--canvas) 30%, transparent); -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%); }
+html[data-next] .ctx .lifted { pointer-events: none; }
+html[data-next] .ctx .lifted .who, html[data-next] .ctx .lifted .copy { display: none; }
+html[data-next] .ctx .lifted .body { box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.35); }
+html[data-next] .ctx-menu {
+  position: fixed; min-width: 230px; padding: 6px; border-radius: 22px; display: grid;
+  background: var(--glass-strong); -webkit-backdrop-filter: blur(30px) saturate(190%); backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: inset 0 1px 0.5px var(--glass-hi), inset 0 0 0 0.5px var(--glass-edge), 0 24px 60px -16px rgba(0, 0, 0, 0.4);
+}
+html[data-next] .ctx-menu button { display: flex; align-items: center; justify-content: space-between; gap: 18px; height: 44px; padding: 0 14px; border: 0; background: none; border-radius: 14px; font-size: 16px; letter-spacing: -0.02em; color: var(--ink); text-align: left; }
+html[data-next] .ctx-menu button + button { box-shadow: inset 0 0.5px 0 var(--rule); border-radius: 0 0 14px 14px; }
+html[data-next] .ctx-menu button:hover, html[data-next] .ctx-menu button:focus-visible { background: var(--fill-2); outline: none; }
+html[data-next] .ctx-menu svg.i { width: 19px; height: 19px; color: var(--ink); }
+
+/* botão de enviar aparece quando há texto, como no app de mensagens */
+html[data-next] .composer .send { transition: transform .4s cubic-bezier(.34, 1.56, .64, 1), opacity .2s; }
+html[data-next] #msg:placeholder-shown ~ .row .send { transform: scale(.4); opacity: 0; pointer-events: none; }
+html[data-next] .composer textarea { transition: background-color .2s, padding .2s; }
+html[data-next] #msg:placeholder-shown { padding-right: 16px; }
+
+/* ---------- aparelhos: anel de progresso e alvo para soltar ---------- */
+html[data-next] .av.busy::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), color-mix(in srgb, var(--accent) 18%, transparent) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  transition: --p .3s;
+}
+html[data-next] .device { transition: background-color .2s, transform .35s cubic-bezier(.34, 1.56, .64, 1), box-shadow .2s; }
+html[data-next] .device.drop-hot { background: var(--accent-tint); transform: scale(1.02); box-shadow: inset 0 0 0 2px var(--accent); border-radius: 16px; z-index: 1; }
+html[data-next] .device.drop-hot .nm { color: var(--accent); }
+html[data-next] .drag-overlay { inset: auto 0 calc(24px + env(safe-area-inset-bottom, 0px)) 0; border: 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; display: flex; justify-content: center; }
+html[data-next] .drag-overlay div { padding: 14px 22px; animation: v-pill .45s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes v-pill { from { opacity: 0; transform: translateY(16px) scale(.9); } }
+
+/* ---------- visualizador ---------- */
+html[data-next] dialog.viewer::backdrop { background: transparent; }
+html[data-next] dialog.viewer.fancy .vw-stage { touch-action: none; }
+html[data-next] dialog.viewer.fancy .vw-media > img { cursor: zoom-in; user-select: none; -webkit-user-drag: none; will-change: transform; }
+html[data-next] dialog.viewer.fancy.zoomed .vw-media > img { cursor: grab; }
+html[data-next] dialog.viewer.fancy.zoomed .vw-media { overflow: visible; }
+html[data-next] dialog.viewer .vw-bar, html[data-next] dialog.viewer .vw-strip, html[data-next] dialog.viewer .vw-nav { transition: opacity .3s, transform .4s cubic-bezier(.32,.72,0,1); }
+html[data-next] dialog.viewer.bare .vw-bar { opacity: 0; transform: translateY(-12px); pointer-events: none; }
+html[data-next] dialog.viewer.bare .vw-strip { opacity: 0; transform: translateY(12px); pointer-events: none; }
+html[data-next] dialog.viewer.bare .vw-nav, html[data-next] dialog.viewer.dragging .vw-nav, html[data-next] dialog.viewer.zoomed .vw-nav { opacity: 0; pointer-events: none; }
+html[data-next] dialog.viewer.dragging .vw-bar, html[data-next] dialog.viewer.dragging .vw-strip { opacity: 0; }
+html[data-next] dialog.viewer.fancy .vw-media { overflow: visible; }
+
+/* ---------- folhas: arrastar para fechar ---------- */
+html[data-next] dialog.dragging { animation: none !important; transition: none; }
+
+/* ---------- busca de comandos (⌘K) ---------- */
+html[data-next] dialog.palette { width: min(640px, calc(100vw - 24px)); padding: 0; margin: 12vh auto auto; border-radius: 26px; overflow: hidden; background: var(--glass-strong); }
+html[data-next] dialog.palette[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: min(560px, 76vh); animation: v-pal .32s cubic-bezier(.32,.72,0,1); }
+@keyframes v-pal { from { opacity: 0; transform: scale(.96) translateY(-8px); } }
+html[data-next] dialog.palette::before { display: none; }
+html[data-next] .pal-in { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 0.5px solid var(--rule-2); }
+html[data-next] .pal-in svg.i { width: 22px; height: 22px; color: var(--muted); }
+html[data-next] .pal-in input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 20px; letter-spacing: -0.022em; font-weight: 500; }
+html[data-next] .pal-in input::placeholder { color: var(--faint); }
+html[data-next] dialog.palette ul { list-style: none; margin: 0; padding: 6px; overflow: auto; }
+html[data-next] dialog.palette li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 0 12px; min-height: 46px; border-radius: 14px; cursor: pointer; font-size: 15px; letter-spacing: -0.015em; }
+html[data-next] dialog.palette li svg.i { width: 20px; height: 20px; color: var(--muted); justify-self: center; }
+html[data-next] dialog.palette li .pl { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+html[data-next] dialog.palette li small { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+html[data-next] dialog.palette li[aria-selected="true"] { background: var(--accent); color: #fff; }
+html[data-next] dialog.palette li[aria-selected="true"] svg.i, html[data-next] dialog.palette li[aria-selected="true"] small { color: rgba(255, 255, 255, 0.85); }
+html[data-next] dialog.palette li.none { color: var(--muted); cursor: default; justify-content: center; display: flex; }
+html[data-next] kbd { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--sunken); font: 600 11.5px/1 var(--font-ui); color: var(--muted); box-shadow: inset 0 -1px 0 var(--rule-2); }
+html[data-next] li[aria-selected="true"] kbd { background: rgba(255, 255, 255, 0.22); color: #fff; box-shadow: none; }
+html[data-next] .pal-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 18px 12px; border-top: 0.5px solid var(--rule-2); font-size: 12px; color: var(--muted); }
+html[data-next] .pal-foot span { display: inline-flex; align-items: center; gap: 4px; }
+@media (pointer: coarse) { html[data-next] .pal-foot, html[data-next] .pal-in kbd { display: none; } }
+@media (max-width: 640px) { html[data-next] dialog.palette { margin: max(10px, env(safe-area-inset-top, 0px)) 8px auto; width: calc(100vw - 16px); } html[data-next] dialog.palette[open] { animation: v-pal .32s cubic-bezier(.32,.72,0,1); } }
+html[data-next] .kbd-btn { color: var(--ink); }
+
+/* ---------- leitor de QR ---------- */
+html[data-next] dialog.scanner { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border-radius: 0; background: #000; color: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; overflow: hidden; }
+html[data-next] dialog.scanner::before { display: none; }
+html[data-next] dialog.scanner[open] { display: block; animation: v-fade .3s ease-out; }
+html[data-next] dialog.scanner::backdrop { background: #000; }
+html[data-next] .sc-stage { position: absolute; inset: 0; display: grid; place-items: center; }
+html[data-next] .sc-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+html[data-next] .sc-frame { position: relative; width: min(68vw, 300px); aspect-ratio: 1; border-radius: 34px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45); transition: transform .4s cubic-bezier(.34, 1.56, .64, 1); }
+html[data-next] .sc-frame i { position: absolute; width: 46px; height: 46px; border: 5px solid #ffd60a; }
+html[data-next] .sc-frame i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 34px; }
+html[data-next] .sc-frame i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 34px; }
+html[data-next] .sc-frame i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 34px; }
+html[data-next] .sc-frame i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 34px; }
+html[data-next] dialog.scanner.found .sc-frame { transform: scale(.9); }
+html[data-next] dialog.scanner.found .sc-frame i { border-color: #30d158; }
+html[data-next] .sc-bar { position: absolute; top: max(12px, env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); }
+html[data-next] .sc-hint { position: absolute; left: 50%; bottom: max(40px, calc(env(safe-area-inset-bottom, 0px) + 24px)); transform: translateX(-50%); margin: 0; width: max-content; max-width: calc(100vw - 32px); text-align: center;
+  padding: 12px 20px; border-radius: 999px; font-size: 15px; font-weight: 590; color: #fff;
+  background: rgba(60, 60, 66, 0.5); -webkit-backdrop-filter: blur(20px) saturate(170%); backdrop-filter: blur(20px) saturate(170%); box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.28); }
+html[data-next] dialog.scanner .vw-btn { background: rgba(60, 60, 66, 0.5); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.28); color: #fff; }
+html[data-next] .scan-btn svg.i { width: 16px; height: 16px; }
+html[data-next] .home .under .scan-btn { background: var(--sunken); height: 32px; padding: 0 14px; font-size: 14px; }
+html[data-next] .home .under .scan-btn:hover { text-decoration: none; background: var(--sunken); filter: brightness(.97); }
+
+/* ---------- instalar ---------- */
+html[data-next] #install-sheet .steps { list-style: none; margin: 18px 0 22px; padding: 0; display: grid; gap: 14px; counter-reset: s; }
+html[data-next] #install-sheet .steps li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; align-items: center; font-size: 16px; letter-spacing: -0.02em; }
+html[data-next] .sq-ico { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; background: var(--sunken); color: var(--accent); }
+html[data-next] .sq-ico svg.i { width: 22px; height: 22px; }
+html[data-next] .sq-ico.app { background: none; } html[data-next] .sq-ico.app .appicon { width: 40px; height: 40px; }
+html[data-next] .btn.wide { width: 100%; }
+
+/* ---------- compartilhar de outro app ---------- */
+html[data-next] .share-page { max-width: 560px; }
+html[data-next] .share-head { display: grid; justify-items: center; text-align: center; gap: 10px; padding-top: 4vh; }
+html[data-next] .share-head h1 { margin: 0; font-family: var(--font-display); font-size: clamp(30px, 6vw, 40px); font-weight: 700; letter-spacing: -0.026em; }
+html[data-next] .share-head .lede { margin: 0; color: var(--muted); font-size: 16px; }
+html[data-next] .share-stack { position: relative; width: 150px; height: 150px; margin-bottom: 14px; }
+html[data-next] .share-stack img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 22px; box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.35), 0 0 0 3px var(--canvas); transform: rotate(calc((var(--i) - 1) * 6deg)) translateX(calc((var(--i) - 1) * 6px)); }
+html[data-next] .share-stack img:first-child { z-index: 5; transform: none; }
+html[data-next] .share-page form { width: 100%; }
+
+/* ---------- ajustes por tamanho de tela ---------- */
+/* celulares pequenos (iPhone SE, 320–360 px) */
+@container room (max-width: 360px) {
+  html[data-next] .room-head { gap: 4px; padding-inline: 8px; }
+  html[data-next] .home-link { width: 40px; height: 40px; }
+  html[data-next] .addr-room, html[data-next] .addr-q { font-size: 16px; }
+  html[data-next] .head-actions .btn.icon, html[data-next] .head-actions #show-qr { width: 32px; }
+  html[data-next] .room-tabs { width: calc(100% - 20px); }
+  html[data-next] .room-tabs button { font-size: 10px; }
+  html[data-next] .composer { padding: 0 8px; }
+}
+/* celular deitado: pouca altura — barra de abas baixa, ícone ao lado do nome */
+@media (max-height: 520px) and (orientation: landscape) {
+  html[data-next]:root { --head-h: 54px; --tabbar-h: 48px; }
+  html[data-next] .room-head { padding-top: max(6px, env(safe-area-inset-top, 0px)); padding-bottom: 6px; }
+  html[data-next] .home-link { width: 40px; height: 40px; }
+  html[data-next] .room-tabs button { flex-direction: row; gap: 6px; font-size: 13px; }
+  html[data-next] .room-tabs button svg.i { width: 21px; height: 21px; }
+  html[data-next] .composer textarea { min-height: 40px; padding-top: 9px; padding-bottom: 9px; }
+  html[data-next] #attach { width: 40px; height: 40px; }
+  html[data-next] .composer .send { width: 32px; height: 32px; }
+  html[data-next] .composer .target { display: none; }
+  html[data-next] .msg .body { max-width: min(520px, 62vw); }
+  html[data-next] .xfer.has-media, html[data-next] .feed > .xfer.has-media { width: min(360px, 100%); }
+  html[data-next] .media { max-height: 54vh; }
+}
+@container room (max-width: 680px) and (min-width: 520px) {
+  html[data-next] .room-tabs { width: min(420px, calc(100% - 28px)); }
+  html[data-next] .composer-in { max-width: 600px; }
+}
+/* telas largas: painéis um pouco maiores e a conversa centralizada */
+@container room (min-width: 1500px) {
+  html[data-next] .room-body { grid-template-columns: 330px minmax(0, 1fr) 370px; }
+  html[data-next] .feed > *, html[data-next] .composer-in { max-width: 780px; }
+}
+@container room (min-width: 1900px) {
+  html[data-next] .room-body { grid-template-columns: 360px minmax(0, 1fr) 400px; padding-inline: max(10px, calc((100% - 1840px) / 2)); }
+  html[data-next] .room-head { padding-inline: max(14px, calc((100% - 1840px) / 2 + 4px)); }
+}
+/* tablets em pé e computadores estreitos (681–1059): controle segmentado no topo */
+@container room (min-width: 681px) and (max-width: 1059px) {
+  html[data-next] .room-tabs .lens { display: none; }
+  html[data-next] .feed { padding-inline: 24px; }
+}
+/* tela de toque grande (tablet): alvos maiores */
+@media (pointer: coarse) and (min-width: 681px) {
+  html[data-next] .btn { height: 40px; }
+  html[data-next] .btn.sm { height: 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-next] .room-tabs .lens, html[data-next] .msg .row, html[data-next] .msg[data-t]::after { transition: none !important; }
+}

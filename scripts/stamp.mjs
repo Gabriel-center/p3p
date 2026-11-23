@@ -16,7 +16,7 @@ for (const f of files) {
     // import ... from './x.js' e import('./x.js') entre módulos do site
     .replace(/((?:from|import)\s*\(?\s*['"])(\.\/[\w-]+\.js)(?:\?v=\w+)?(['"])/g, `$1$2?v=${v}$3`)
     // index.html e vidro/index.html: assets/app.js, assets/app.css, ../assets/vidro.css
-    .replace(/(["'])((?:\.\.\/)?assets\/(?:app\.js|app\.css|vidro\.css))(?:\?v=\w+)?(["'])/g, `$1$2?v=${v}$3`);
+    .replace(/(["'])((?:\.\.\/)?assets\/(?:app\.js|app\.css|vidro\.css|vidro-next\.css))(?:\?v=\w+)?(["'])/g, `$1$2?v=${v}$3`);
   if (s !== before) writeFileSync(p, s);
 }
 console.log(`versão ${v}`);

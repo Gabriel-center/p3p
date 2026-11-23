@@ -1,17 +1,17 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611232152';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611232152';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611232152';
-import { RoomClient } from './room-client.js?v=202611232152';
-import { Mesh } from './mesh.js?v=202611232152';
-import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611232152';
-import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611232152';
-import { makeZip } from './zip.js?v=202611232152';
-import { Viewer } from './viewer.js?v=202611232152';
-import { CloudUpload, downloadUrl } from './cloud.js?v=202611232152';
-import { cleanupOld } from './storage.js?v=202611232152';
-import { SpeedMeter } from './speed.js?v=202611232152';
-import * as hist from './history.js?v=202611232152';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611232247';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611232247';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611232247';
+import { RoomClient } from './room-client.js?v=202611232247';
+import { Mesh } from './mesh.js?v=202611232247';
+import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611232247';
+import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611232247';
+import { makeZip } from './zip.js?v=202611232247';
+import { Viewer } from './viewer.js?v=202611232247';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611232247';
+import { cleanupOld } from './storage.js?v=202611232247';
+import { SpeedMeter } from './speed.js?v=202611232247';
+import * as hist from './history.js?v=202611232247';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
@@ -64,6 +64,10 @@ const ICON = {
 // Só troca ícones, a marca e pequenos trechos de HTML; o resto é assets/vidro.css.
 const SKIN = document.documentElement.dataset.skin || '';
 const VIDRO = SKIN === 'vidro';
+// Versão de teste (vidro/index.html, data-next): movimento, gestos, app instalável, atalhos e leitor de QR.
+// Tudo isso mora em next.js e só é carregado nessa página.
+const NEXT = 'next' in document.documentElement.dataset;
+const nextMod = NEXT ? import('./next.js?v=202611232247') : null;
 if (VIDRO) Object.assign(ICON, {
   send: svg('<path d="M12 18.5V6M6.5 11.5L12 6l5.5 5.5"/>'),
   clip: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
@@ -183,10 +187,18 @@ document.addEventListener('click', e => {
   navigate(a.getAttribute('href'));
 });
 
+// Funções do app que a versão de teste usa.
+const nextReady = nextMod?.then(m => {
+  m.init({ navigate, toast, copy, ICON, esc, shareUrl, setTheme, getTheme, APPICON, avatar, current: () => current });
+  return m;
+}).catch(e => { console.warn('next.js', e); return null; });
+
 // ---------- rotas ----------
 let current = null;
 function route() {
   if (current) { current.destroy(); current = null; }
+  // Arquivos compartilhados de outro app (app instalado no celular): escolher a sala.
+  if (NEXT && /^\?share(=|&|$)/.test(location.search)) { nextReady.then(m => m?.renderShare(app)); return; }
   const room = roomFromLocation();
   if (room) {
     const canonical = `${location.pathname}?${room}`;
@@ -283,6 +295,7 @@ async function renderHome() {
       <span class="rfoot"><span class="tnum">${esc(new Date(r.lastVisit).toLocaleDateString(LANG === 'pt' ? 'pt-BR' : 'en-US', { day: 'numeric', month: 'short' }))} · ${esc(r.visits === 1 ? t('1 visita') : t('{n} visitas', { n: r.visits }))}</span>
       <span class="rdev">${[...new Set(r.kinds || [])].slice(0, 4).map(k => ICON[k] || '').join('')}</span></span>
     </a></li>`).join('') : `<li class="empty">${esc(t('Nenhuma sala ainda. As salas que você abrir aparecem aqui.'))}</li>`;
+  nextReady?.then(m => m?.onHome());
 }
 
 // ---------- histórico ----------
@@ -386,7 +399,7 @@ class RoomView {
     if (pw) this.client.password = pw;
 
     this.render();
-    this.viewer = new Viewer({ resolve: id => this.viewItem(id), esc, icons: ICON, t });
+    this.viewer = new Viewer({ resolve: id => this.viewItem(id), esc, icons: ICON, t, fancy: NEXT });
     this.wire();
     if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__p2p = this;
     hist.visitRoom(room, [this.me.kind]);
@@ -401,6 +414,7 @@ class RoomView {
     this.timers.push(setInterval(() => this.live(), 250));
     this.upMeters = new Map();
     this.timers.push(setInterval(() => this.renderShelf(), 60000));
+    nextReady?.then(m => { if (!this.destroyed) m?.onRoom(this); });
   }
 
   // ----- montagem -----
@@ -561,7 +575,7 @@ class RoomView {
       if (!overlay) {
         overlay = document.createElement('div'); overlay.className = 'drag-overlay';
         const n = this.peers.size;
-        overlay.innerHTML = `<div><b>${esc(t('Solte para enviar'))}</b><span>${esc(n ? t('Vai para quem estiver selecionado no campo de envio.') : t('Ninguém mais na sala: fica guardado por 48 h.'))}</span></div>`;
+        overlay.innerHTML = `<div><b>${esc(t('Solte para enviar'))}</b><span>${esc(n ? (NEXT ? t('Solte sobre um aparelho para mandar só para ele.') : t('Vai para quem estiver selecionado no campo de envio.')) : t('Ninguém mais na sala: fica guardado por 48 h.'))}</span></div>`;
         document.body.appendChild(overlay);
       }
     });
@@ -573,7 +587,15 @@ class RoomView {
       const files = [...e.dataTransfer.files];
       const toShelf = !!e.target.closest?.('#shelf-drop');
       $('#shelf-drop')?.classList.remove('hot');
-      if (toShelf) files.forEach(f => this.storeInRoom(f)); else this.sendFiles(files);
+      // Versão de teste: soltar sobre um aparelho da lista manda só para ele.
+      const row = NEXT ? e.target.closest?.('.device[data-peer]:not([data-self])') : null;
+      if (row && this.peers.has(row.dataset.peer)) {
+        const prev = this.target;
+        this.target = row.dataset.peer;
+        this.sendFiles(files);
+        this.target = prev;
+        toast(t('Mandando só para {name}', { name: this.peers.get(row.dataset.peer).name }));
+      } else if (toShelf) files.forEach(f => this.storeInRoom(f)); else this.sendFiles(files);
     });
     this.on(document, 'paste', e => {
       const files = [...(e.clipboardData?.files || [])];
@@ -788,7 +810,7 @@ class RoomView {
       const tab = tabs.get(p.peerId);
       const detail = self ? t('Este aparelho') : p.away ? t('Sem sinal agora') : KIND_LABEL(p.kind);
       const right = self ? '<span></span>' : p.away ? `<span class="path connecting"><i class="trace connecting"></i>${esc(t('Ausente'))}</span>` : pill(this.mesh.path(p.peerId));
-      return `<li class="device${p.away ? ' away' : ''}">${avatar(p, { lg: true })}<div style="min-width:0"><div class="nm">${esc(p.name)}${self ? `<em>${esc(t('você'))}</em>` : ''}${tab && !self ? `<em>${esc(t('aba {n}', { n: tab }))}</em>` : ''}</div><div class="dt">${ICON[p.kind] || ICON.desktop}${esc(detail)}</div></div>${right}</li>`;
+      return `<li class="device${p.away ? ' away' : ''}" data-peer="${esc(p.peerId)}"${self ? ' data-self' : ''}>${avatar(p, { lg: true })}<div style="min-width:0"><div class="nm">${esc(p.name)}${self ? `<em>${esc(t('você'))}</em>` : ''}${tab && !self ? `<em>${esc(t('aba {n}', { n: tab }))}</em>` : ''}</div><div class="dt">${ICON[p.kind] || ICON.desktop}${esc(detail)}</div></div>${right}</li>`;
     };
     pane.innerHTML = `<h2 class="sec-title">${esc(t('Na sala'))}<span class="tnum">${peers.length + 1} ${esc(peers.length ? t('aparelhos') : t('aparelho'))}</span></h2>
       <div class="map">${this.mapSVG(peers)}</div>
@@ -1546,7 +1568,7 @@ class RoomView {
     const act = b.dataset.act;
     if (act === 'view') {
       const ids = this.albumItems(a).map(x => x.id);
-      this.viewer.openWith(ids, Math.max(0, ids.indexOf(b.dataset.id)));
+      this.viewer.openWith(ids, Math.max(0, ids.indexOf(b.dataset.id)), b);
       return;
     }
     if (act === 'zip') { this.zipAlbum(a); return; }
@@ -1693,7 +1715,7 @@ class RoomView {
     const m = this.cards.get(id)?.model;
     if (!m) return;
     const act = b.dataset.act;
-    if (act === 'view') { this.viewer.openWith([id], 0); return; }
+    if (act === 'view') { this.viewer.openWith([id], 0, b); return; }
     if (act === 'cancel') m.cancel?.();
     else if (act === 'pause') m.pause?.();
     else if (act === 'unpause') m.unpause?.();
@@ -1838,6 +1860,7 @@ class RoomView {
     try { this.codec.w?.terminate(); } catch { /* ok */ }
     this.viewer.destroy();
     this.wakeLock?.release?.().catch(() => {});
+    nextReady?.then(m => m?.offRoom(this));
   }
 }
 
