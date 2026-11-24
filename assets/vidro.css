@@ -107,7 +107,19 @@ html[data-skin="vidro"] body {
   background-attachment: fixed;
 }
 html[data-skin="vidro"] ::selection { background: var(--accent-tint); }
-html[data-skin="vidro"] :focus-visible { outline: 3px solid color-mix(in srgb, var(--focus) 55%, transparent); outline-offset: 1px; border-radius: 12px; }
+/* Foco: o anel segue a forma do próprio elemento (círculo, cápsula) — nada de quadrado por cima.
+   No toque, nenhum retângulo cinza do navegador. Campos de texto não ganham contorno: quem mostra o foco
+   é a cápsula em volta deles. */
+html[data-skin="vidro"] * { -webkit-tap-highlight-color: transparent; }
+html[data-skin="vidro"] :focus { outline: none; }
+html[data-skin="vidro"] :focus-visible { outline: 2.5px solid color-mix(in srgb, var(--focus) 60%, transparent); outline-offset: 2px; }
+html[data-skin="vidro"] input:focus-visible, html[data-skin="vidro"] textarea:focus-visible, html[data-skin="vidro"] select:focus-visible { outline: none; }
+html[data-skin="vidro"] .tile:focus-visible, html[data-skin="vidro"] .files-list .mini:focus-visible { outline-offset: -3px; }
+html[data-skin="vidro"] .recents li a:focus-visible, html[data-skin="vidro"] .device:focus-visible { outline-offset: -3px; border-radius: inherit; }
+html[data-skin="vidro"] .recents li:first-child a { border-radius: var(--r-l) var(--r-l) 0 0; }
+html[data-skin="vidro"] .recents li:last-child a { border-radius: 0 0 var(--r-l) var(--r-l); }
+html[data-skin="vidro"] .recents li:only-child a { border-radius: var(--r-l); }
+html[data-skin="vidro"] .field input:focus, html[data-skin="vidro"] .field-row input:focus, html[data-skin="vidro"] .gate-card input:focus, html[data-skin="vidro"] .filters input:focus, html[data-skin="vidro"] .filters select:focus { box-shadow: 0 0 0 3px var(--accent-tint); }
 html[data-skin="vidro"] svg.i { stroke-width: 1.9; }
 html[data-skin="vidro"] .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 html[data-skin="vidro"] * { scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent; }
@@ -163,6 +175,7 @@ html[data-skin="vidro"] .hero form { margin-top: 34px; width: min(560px, 100%); 
 html[data-skin="vidro"] .urlfield { border-radius: 999px; padding: 6px; }
 html[data-skin="vidro"] .urlfield:focus-within { box-shadow: inset 0 1px 0.5px var(--glass-hi), inset 0 0 0 0.5px var(--glass-edge), 0 0 0 4px var(--accent-tint), var(--glass-shadow); }
 html[data-skin="vidro"] .urlfield label { font-family: var(--font-ui); font-size: 15px; color: var(--faint); padding-left: 16px; letter-spacing: -0.01em; }
+html[data-skin="vidro"] .urlfield input:focus { outline: none; box-shadow: none; }
 html[data-skin="vidro"] .urlfield input { width: 0; min-width: 4ch; font-family: var(--font-ui); font-size: 21px; font-weight: 600; letter-spacing: -0.022em; padding: 10px 10px 10px 1px; }
 html[data-skin="vidro"] .urlfield input::placeholder { color: var(--faint); font-weight: 500; }
 @media (max-width: 560px) {

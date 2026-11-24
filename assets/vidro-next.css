@@ -1,15 +1,75 @@
 /* p3p · vidro (teste) — camada carregada só em vidro/index.html (data-next), por cima de vidro.css.
    Movimento, gestos, busca de comandos, leitor de QR, instalar e ajustes para cada tamanho de tela. */
 
-/* ---------- brilho do vidro seguindo o mouse / o dedo ---------- */
-html[data-next] .room-tabs, html[data-next] .head-actions, html[data-next] .home-link, html[data-next] .topline > div, html[data-next] #attach, html[data-next] .composer textarea, html[data-next] .urlfield, html[data-next] dialog:not(.viewer):not(.scanner), html[data-next] .toast,
-html[data-next] .pane-devices, html[data-next] .pane-files {
-  background-image: radial-gradient(360px circle at var(--mx, -999px) var(--my, -999px), var(--glint), transparent 55%);
-  background-attachment: fixed;
+/* ---------- vidro líquido ----------
+   Os controles que flutuam sobre o conteúdo (abas, botões redondos, campo de mensagem, barra de endereço)
+   são lentes: pouco desfoque, o fundo entorta perto da borda (filtro calculado em glass.js), aro de luz
+   em cima à esquerda e embaixo à direita. Onde o navegador não refrata, fica o vidro fosco de vidro.css.
+   Nada aqui depende do ponteiro: sem repintura enquanto o mouse anda. */
+html[data-next] { --lg-tint: rgba(255, 255, 255, 0.22); --lg-rim: rgba(255, 255, 255, 0.9); --lg-rim-2: rgba(255, 255, 255, 0.45); --lg-glow: rgba(255, 255, 255, 0.28); }
+html[data-next][data-theme="dark"] { --lg-tint: rgba(40, 40, 46, 0.32); --lg-rim: rgba(255, 255, 255, 0.34); --lg-rim-2: rgba(255, 255, 255, 0.12); --lg-glow: rgba(255, 255, 255, 0.06); }
+@media (prefers-color-scheme: dark) { html[data-next]:not([data-theme="light"]) { --lg-tint: rgba(40, 40, 46, 0.32); --lg-rim: rgba(255, 255, 255, 0.34); --lg-rim-2: rgba(255, 255, 255, 0.12); --lg-glow: rgba(255, 255, 255, 0.06); } }
+html[data-next] .lg, html[data-next] #attach.lg {
+  --lg-shadow: inset 1.5px 1.5px 1px -1px var(--lg-rim), inset -1.5px -1.5px 1px -1px var(--lg-rim-2), inset 0 0 0 0.5px var(--glass-edge), inset 0 0 14px var(--lg-glow), var(--glass-shadow);
+  box-shadow: var(--lg-shadow);
+  -webkit-backdrop-filter: blur(10px) saturate(180%); backdrop-filter: blur(10px) saturate(180%);
 }
-html[data-next] { --glint: rgba(255, 255, 255, 0.55); }
-html[data-next][data-theme="dark"] { --glint: rgba(255, 255, 255, 0.09); }
-@media (prefers-color-scheme: dark) { html[data-next]:not([data-theme="light"]) { --glint: rgba(255, 255, 255, 0.09); } }
+html[data-next].lg-on .lg, html[data-next].lg-on #attach.lg {
+  background-color: var(--lg-tint);
+  -webkit-backdrop-filter: blur(2px) var(--lg,) saturate(185%) brightness(1.04);
+  backdrop-filter: blur(2px) var(--lg,) saturate(185%) brightness(1.04);
+}
+/* o campo de mensagem é texto: um pouco mais opaco para ler bem por cima das bolhas */
+html[data-next].lg-on .composer textarea.lg { background-color: color-mix(in srgb, var(--surface) 46%, transparent); }
+html[data-next] .composer textarea.lg:focus { background-color: color-mix(in srgb, var(--surface) 68%, transparent); box-shadow: var(--lg-shadow); }
+@media (prefers-reduced-transparency: reduce) {
+  html[data-next] .lg, html[data-next].lg-on .lg, html[data-next] #attach.lg { background-color: var(--glass-strong); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Botões redondos de vidro: ao tocar, crescem e acendem (como uma gota sob o dedo) e voltam com mola. */
+html[data-next] .lg.icon, html[data-next] .head-actions .icon, html[data-next] .home-link, html[data-next] #attach {
+  transition: scale .5s linear(0, 0.16, 0.48, 0.82, 1.03, 1.1, 1.09, 1.05, 1.02, 1, 0.995, 1), background-color .25s, filter .25s;
+}
+html[data-next] #attach:active, html[data-next] .home-link:active, html[data-next] .head-actions .icon:active { scale: 1.12; filter: brightness(1.08); transition-duration: .18s; transition-timing-function: cubic-bezier(.2,.9,.3,1.2); }
+html[data-next] .head-actions:has(.icon:active) { scale: 1.03; transition: scale .2s cubic-bezier(.2,.9,.3,1.2); }
+html[data-next] .head-actions { transition: scale .5s linear(0, 0.16, 0.48, 0.82, 1.03, 1.1, 1.09, 1.05, 1.02, 1, 0.995, 1); }
+
+/* Botões em geral: afundam um pouco no toque e voltam com mola; nada de piscar. */
+html[data-next] .btn, html[data-next] button.icon, html[data-next] .chip, html[data-next] .tile, html[data-next] .recents li a, html[data-next] .send { transition: scale .45s linear(0, 0.16, 0.48, 0.82, 1.03, 1.08, 1.06, 1.02, 1, 0.995, 1), background-color .2s, color .2s, opacity .2s; }
+html[data-next] .btn:active:not(:disabled), html[data-next] button.icon:active:not(:disabled), html[data-next] .chip:active, html[data-next] .send:active { transform: none; scale: .94; transition-duration: .12s; transition-timing-function: ease-out; }
+html[data-next] .tile:active { scale: .97; transition-duration: .12s; }
+
+/* Controle segmentado: a seleção é uma peça só que desliza (next.js põe .thumb no primeiro clique). */
+html[data-next] .seg { position: relative; isolation: isolate; }
+html[data-next] .seg > .thumb { position: absolute; z-index: -1; left: 3px; top: 3px; bottom: 3px; border-radius: 999px; background: var(--surface); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  transition: transform .42s linear(0, 0.14, 0.44, 0.76, 0.98, 1.06, 1.05, 1.02, 1, 0.997, 1), width .3s cubic-bezier(.32,.72,0,1); pointer-events: none; }
+html[data-next] .seg.has-thumb button[aria-checked="true"] { background: none; box-shadow: none; }
+html[data-next] .seg button { transition: color .2s; }
+
+/* Folhas e janelas: entram com mola curta (saída em next.js). */
+html[data-next] dialog[open]:not(.viewer):not(.scanner) { animation: n-sheet .34s linear(0, 0.14, 0.45, 0.78, 0.98, 1.04, 1.03, 1.01, 1); }
+@keyframes n-sheet { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+html[data-next] dialog[open]::backdrop { animation: v-fade .25s ease-out; }
+
+/* Troca de tela e de tema: dissolve rápido (View Transitions; só onde o navegador tem). */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; animation-timing-function: cubic-bezier(.32,.72,0,1); }
+
+/* No celular, as faixas esmaecidas no topo e embaixo da conversa só com degradê: desfocar uma área
+   grande a cada rolagem era o que mais pesava. */
+@container room (max-width: 680px) {
+  /* Borda de rolagem leve, como no sistema: o conteúdo continua visível passando por baixo do vidro,
+     que é o que faz a lente aparecer. Desfoque pequeno só na faixa do topo (área pequena). */
+  html[data-next] .room-head::before {
+    inset: 0 0 -18px;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--canvas) 86%, transparent), color-mix(in srgb, var(--canvas) 40%, transparent) 70%, transparent);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  html[data-next] .pane-feed::after {
+    height: calc(var(--tabbar-h) + 60px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(to top, color-mix(in srgb, var(--canvas) 55%, transparent), transparent);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
 
 /* ---------- barra de abas: marca que desliza ---------- */
 html[data-next] .room-tabs { isolation: isolate; }   /* a barra já é absolute no celular (vidro.css): a marca se posiciona nela */
@@ -18,7 +78,7 @@ html[data-next] .room-tabs .lens { display: none; }
   html[data-next] .room-tabs .lens {
     display: block; position: absolute; z-index: -1; left: 0; top: 4px; bottom: 4px; width: 0; border-radius: 999px;
     background: var(--fill-2); box-shadow: inset 0 1px 0.5px var(--glass-hi), inset 0 0 0 0.5px var(--glass-edge);
-    transition: transform .55s linear(0, 0.09, 0.32, 0.6, 0.84, 1.0, 1.07, 1.08, 1.06, 1.03, 1.01, 1, 0.995, 1), width .45s cubic-bezier(.32,.72,0,1), scale .3s cubic-bezier(.32,.72,0,1);
+    transition: transform .4s linear(0, 0.14, 0.44, 0.76, 0.98, 1.07, 1.07, 1.04, 1.01, 1, 0.997, 1), width .3s cubic-bezier(.32,.72,0,1), scale .25s cubic-bezier(.32,.72,0,1);
   }
   html[data-next] .room-tabs.pressing .lens { scale: 1.12 1.18; background: color-mix(in srgb, var(--glass-strong) 70%, var(--accent) 6%); box-shadow: inset 0 1px 0.5px var(--glass-hi), 0 6px 18px -6px rgba(0, 0, 0, 0.25); }
   html[data-next] .room-tabs button[aria-selected="true"] { background: none; }

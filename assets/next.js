@@ -6,10 +6,11 @@
 // - Computador: ⌘K / Ctrl+K abre a busca de comandos, "/" vai para o campo de mensagem, arrastar
 //   arquivos sobre um aparelho manda só para ele, anel de progresso no avatar de quem está recebendo.
 // - App: instalar na tela inicial, receber arquivos pelo "Compartilhar" do celular, ler o QR com a câmera.
-import { t, bytes } from './i18n.js?v=202611232247';
-import { normalizeRoom, roomFromLocation } from './device.js?v=202611232247';
-import * as hist from './history.js?v=202611232247';
-import { spring, reduced, tick } from './motion.js?v=202611232247';
+import { t, bytes } from './i18n.js?v=202611240439';
+import { normalizeRoom, roomFromLocation } from './device.js?v=202611240439';
+import * as hist from './history.js?v=202611240439';
+import { spring, reduced, tick } from './motion.js?v=202611240439';
+import { glass, refracts } from './glass.js?v=202611240439';
 
 let api = null;
 const $ = (s, el = document) => el.querySelector(s);
@@ -23,13 +24,8 @@ let installEvt = null;
 // ---------- início ----------
 export function init(a) {
   api = a;
-  // Brilho do vidro: segue o mouse (ou o dedo enquanto toca).
-  let raf = 0, px = -999, py = -999;
-  const paint = () => { raf = 0; document.documentElement.style.setProperty('--mx', `${px}px`); document.documentElement.style.setProperty('--my', `${py}px`); };
-  const move = e => { px = e.clientX; py = e.clientY; if (!raf) raf = requestAnimationFrame(paint); };
-  addEventListener('pointermove', move, { passive: true });
-  addEventListener('pointerdown', move, { passive: true });
-  addEventListener('pointerleave', () => { px = py = -999; if (!raf) raf = requestAnimationFrame(paint); });
+  // Vidro líquido com refração onde o navegador deixa (Chrome, Edge, Android).
+  document.documentElement.classList.toggle('lg-on', refracts);
 
   // App instalável
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
@@ -40,6 +36,52 @@ export function init(a) {
 
   sheetDrag();
   keyboard();
+  dialogMotion();
+  segmented();
+}
+
+/** Folhas e janelas também saem com animação (entrar já é com CSS): Esc, "Fechar", botões do formulário. */
+function dialogMotion() {
+  const proto = HTMLDialogElement.prototype;
+  const close = proto.close;
+  proto.close = function (value) {
+    if (!this.open || this.dataset.leaving || this.classList.contains('viewer') || this.classList.contains('scanner') || reduced()) return close.call(this, value);
+    this.dataset.leaving = '1';
+    const sheet = matchMedia('(max-width: 640px)').matches && !this.classList.contains('palette');
+    const from = getComputedStyle(this).transform;
+    const a = this.animate(sheet
+      ? [{ transform: from === 'none' ? 'none' : from }, { transform: 'translateY(105%)' }]
+      : [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.96)' }], { duration: sheet ? 260 : 170, easing: sheet ? 'cubic-bezier(.4,0,1,1)' : 'ease-in', fill: 'forwards' });
+    try { this.animate([{ opacity: 1 }, { opacity: 0 }], { duration: sheet ? 260 : 170, pseudoElement: '::backdrop', fill: 'forwards' }); } catch { /* sem animação no fundo */ }
+    a.finished.catch(() => {}).then(() => { delete this.dataset.leaving; close.call(this, value); this.getAnimations().forEach(x => x.cancel()); this.style.transform = ''; });
+  };
+  // Esc e <form method="dialog"> fecham por dentro do navegador, sem passar por close(): desvia para ela.
+  addEventListener('cancel', e => { const d = e.target; if (d instanceof HTMLDialogElement && !d.classList.contains('viewer')) { e.preventDefault(); d.close(); } }, true);
+  addEventListener('submit', e => {
+    const f = e.target;
+    if (f.method !== 'dialog') return;
+    const d = f.closest('dialog');
+    if (!d) return;
+    e.preventDefault();
+    d.close(e.submitter?.value ?? '');
+  }, true);
+}
+
+/** Controle segmentado (Aparência): a seleção desliza de um botão para o outro. */
+function segmented() {
+  addEventListener('click', e => {
+    const b = e.target.closest('.seg [role="radio"]');
+    if (!b) return;
+    const seg = b.closest('.seg');
+    const old = seg.querySelector('[aria-checked="true"]');
+    let thumb = seg.querySelector(':scope > .thumb');
+    if (!thumb) { thumb = document.createElement('span'); thumb.className = 'thumb'; seg.prepend(thumb); }
+    const place = el => { thumb.style.width = `${el.offsetWidth}px`; thumb.style.transform = `translateX(${el.offsetLeft - 3}px)`; };
+    if (old && !seg.classList.contains('has-thumb')) { thumb.style.transition = 'none'; place(old); thumb.offsetWidth; thumb.style.transition = ''; }
+    seg.classList.add('has-thumb');
+    requestAnimationFrame(() => place(b));   // o tema pode trocar só no quadro seguinte (transição de página): vai direto ao tocado
+    tick(6);
+  });
 }
 
 function canInstall() { return !standalone() && (installEvt || isIOS()); }
@@ -66,6 +108,8 @@ function sheet(id, html) {
 }
 
 export function onHome() {
+  glass($('.home .topline > div'));
+  glass($('.home .urlfield'));
   const tl = $('.home .topline > div');
   if (tl && !tl.querySelector('[data-install]')) {
     tl.insertAdjacentHTML('afterbegin', `<button class="btn quiet" type="button" data-install hidden>${api.ICON.down}<span class="lbl">${t('Instalar')}</span></button>`);
@@ -94,6 +138,7 @@ export function onRoom(v) {
   rooms.set(v, st);
   const on = (el, type, fn, opt) => { el.addEventListener(type, fn, opt); st.offs.push(() => el.removeEventListener(type, fn, opt)); };
 
+  for (const el of [$('.room-tabs'), $('.home-link'), $('.head-actions'), $('#attach'), $('#msg')]) glass(el);
   tabLens(v, st, on);
   enterAnimations(v, st);
   revealTimes(v, on);
@@ -140,7 +185,7 @@ function tabLens(v, st, on) {
     const changed = tab !== v.tab;
     orig(tab);
     place(sel());
-    if (changed) { tick(6); const p = $(`[data-pane="${tab}"]`); if (p && !reduced() && v.tabsVisible()) p.animate([{ opacity: 0, transform: 'translateY(8px) scale(.995)' }, { opacity: 1, transform: 'none' }], spring(420, 0)); }
+    if (changed) { tick(6); const p = $(`[data-pane="${tab}"]`); if (p && !reduced() && v.tabsVisible()) p.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], spring(300, 0)); }
   };
   on(window, 'resize', () => place(sel(), true));
   // Arrastar pela barra: a marca acompanha o dedo e cresce um pouco, como uma lente.
@@ -184,9 +229,10 @@ function enterAnimations(v, st) {
     for (const r of list) for (const n of r.addedNodes) {
       if (!(n instanceof HTMLElement) || !n.matches('.msg, .xfer, .sys')) continue;
       const mine = n.classList.contains('mine');
-      const from = n.matches('.sys') ? 'translateY(6px)' : mine ? 'translate(10px, 24px) scale(.82)' : 'translate(-10px, 10px) scale(.9)';
+      // A minha sobe do campo de mensagem; a dos outros surge pequena do lado de onde vem.
+      const from = n.matches('.sys') ? 'translateY(6px)' : mine ? 'translate(0, 46px) scale(.86)' : 'scale(.82)';
       n.style.transformOrigin = mine ? '100% 100%' : '0% 100%';
-      n.animate([{ opacity: 0, transform: from }, { opacity: 1, transform: 'none' }], spring(520, 0.14));
+      n.animate([{ opacity: 0, transform: from }, { opacity: 1, transform: 'none' }], spring(mine ? 380 : 340, 0.16));
     }
   });
   st.obs.observe(feed, { childList: true });
