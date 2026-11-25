@@ -6,11 +6,11 @@
 // - Computador: ⌘K / Ctrl+K abre a busca de comandos, "/" vai para o campo de mensagem, arrastar
 //   arquivos sobre um aparelho manda só para ele, anel de progresso no avatar de quem está recebendo.
 // - App: instalar na tela inicial, receber arquivos pelo "Compartilhar" do celular, ler o QR com a câmera.
-import { t, bytes } from './i18n.js?v=202611252051';
-import { normalizeRoom, roomFromLocation } from './device.js?v=202611252051';
-import * as hist from './history.js?v=202611252051';
-import { spring, reduced, tick } from './motion.js?v=202611252051';
-import { glass, refracts } from './glass.js?v=202611252051';
+import { t, bytes } from './i18n.js?v=202611252110';
+import { normalizeRoom, roomFromLocation } from './device.js?v=202611252110';
+import * as hist from './history.js?v=202611252110';
+import { spring, reduced, tick } from './motion.js?v=202611252110';
+import { glass, refracts } from './glass.js?v=202611252110';
 
 let api = null;
 const $ = (s, el = document) => el.querySelector(s);
@@ -53,13 +53,22 @@ function scrollbars() {
   probe.remove();
   document.documentElement.classList.toggle('sb-classic', classic);
   if (!classic) return;
-  const timers = new WeakMap();
+  // Surge rápido (120 ms) ao começar a rolar e some devagar (350 ms) um segundo depois de parar.
+  const state = new WeakMap();   // el → { shown, timer, anim }
+  const fade = (el, st, to, ms) => {
+    const from = st.anim ? +getComputedStyle(el).getPropertyValue('--sb-a') || 0 : 1 - to;
+    st.anim?.cancel();
+    // Em degraus (cada degrau recalcula o estilo do que rola): suave para o olho, leve para a conversa longa.
+    st.anim = el.animate({ '--sb-a': [from, to] }, { duration: ms, easing: to ? 'steps(4, jump-start)' : 'steps(7, jump-end)', fill: 'forwards' });
+  };
   addEventListener('scroll', e => {
     const el = e.target === document ? document.scrollingElement : e.target;
-    if (!el?.classList) return;
-    if (!el.classList.contains('scrolling')) el.classList.add('scrolling');
-    clearTimeout(timers.get(el));
-    timers.set(el, setTimeout(() => el.classList.remove('scrolling'), 1000));
+    if (!(el instanceof Element)) return;
+    let st = state.get(el);
+    if (!st) state.set(el, st = { shown: false, timer: 0, anim: null });
+    if (!st.shown) { st.shown = true; fade(el, st, 1, 120); }
+    clearTimeout(st.timer);
+    st.timer = setTimeout(() => { st.shown = false; fade(el, st, 0, 350); }, 1000);
   }, { capture: true, passive: true });
 }
 

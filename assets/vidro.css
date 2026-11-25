@@ -126,13 +126,16 @@ html[data-skin="vidro"] .mono { font-family: ui-monospace, "SF Mono", Menlo, mon
    cantos arredondados, e só aparece enquanto rola (ou com o ponteiro em cima dela, onde engrossa).
    Só onde o sistema usa barras clássicas (Windows, Linux, Mac com mouse): next.js põe .sb-classic ao
    medir que a barra ocupa espaço. Onde ela já flutua (celulares, Mac com trackpad), fica a do sistema. */
-html[data-skin="vidro"] { --sb-thumb: rgba(0, 0, 0, 0.32); --sb-thumb-hover: rgba(0, 0, 0, 0.5); }
-html[data-skin="vidro"][data-theme="dark"] { --sb-thumb: rgba(255, 255, 255, 0.3); --sb-thumb-hover: rgba(255, 255, 255, 0.5); }
-@media (prefers-color-scheme: dark) { html[data-skin="vidro"]:not([data-theme="light"]) { --sb-thumb: rgba(255, 255, 255, 0.3); --sb-thumb-hover: rgba(255, 255, 255, 0.5); } }
+/* --sb-a vai de 0 a 1 e de volta (next.js anima no elemento que rola): o fio surge e some aos poucos. */
+@property --sb-a { syntax: '<number>'; inherits: true; initial-value: 0; }
+/* Cada elemento fixa o seu: a animação só muda o valor no que rola, e o resto da página não recalcula a cada quadro. */
+html[data-skin="vidro"].sb-classic * { --sb-a: 0; }
+html[data-skin="vidro"] { --sb-rgb: 0 0 0; --sb-thumb: rgb(0 0 0 / 0.32); --sb-thumb-hover: rgb(0 0 0 / 0.5); }
+html[data-skin="vidro"][data-theme="dark"] { --sb-rgb: 255 255 255; --sb-thumb: rgb(255 255 255 / 0.3); --sb-thumb-hover: rgb(255 255 255 / 0.5); }
+@media (prefers-color-scheme: dark) { html[data-skin="vidro"]:not([data-theme="light"]) { --sb-rgb: 255 255 255; --sb-thumb: rgb(255 255 255 / 0.3); --sb-thumb-hover: rgb(255 255 255 / 0.5); } }
 html[data-skin="vidro"].sb-classic ::-webkit-scrollbar { width: 13px; height: 13px; background: transparent; }
 html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-track { background: transparent; margin: var(--sb-inset, 8px); }
-html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-thumb { background-color: transparent; background-clip: padding-box; border: 4px solid transparent; border-radius: 999px; min-height: 36px; min-width: 36px; }
-html[data-skin="vidro"].sb-classic .scrolling::-webkit-scrollbar-thumb { background-color: var(--sb-thumb); }
+html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-thumb { background-color: rgb(var(--sb-rgb) / calc(0.32 * var(--sb-a))); background-clip: padding-box; border: 4px solid transparent; border-radius: 999px; min-height: 36px; min-width: 36px; }
 html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-thumb:hover, html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-thumb:active { background-color: var(--sb-thumb-hover); border-width: 3px; }
 html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-button, html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-corner { display: none; background: transparent; }
 /* Cantos arredondados: a barra começa e termina onde a curva acaba. */

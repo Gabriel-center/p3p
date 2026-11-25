@@ -3,7 +3,7 @@
 //   item = { id, name, kind, src, poster, blur, status, href, download, meta, label }
 // Com fancy: a foto cresce a partir do cartão e volta para ele, arrastar para baixo fecha,
 // deslizar acompanha o dedo, pinça e dois toques dão zoom, um toque esconde as barras.
-import { spring, reduced, tick } from './motion.js?v=202611252051';
+import { spring, reduced, tick } from './motion.js?v=202611252110';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
