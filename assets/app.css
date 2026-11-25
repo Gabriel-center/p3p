@@ -636,3 +636,9 @@ dialog.viewer::backdrop { background: #05080f; backdrop-filter: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Cartões do cofre: arquivo que não está neste aparelho (tocar baixa de quem tem). */
+.ring.idle.off { opacity: .45; }
+.msg .copy.forget:hover { color: var(--warn); }
+.tile.doc.missing .tfile { opacity: .5; }
+.xfer .btn[data-act="forget"] { color: var(--warn); }

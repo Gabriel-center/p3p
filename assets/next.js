@@ -6,11 +6,11 @@
 // - Computador: ⌘K / Ctrl+K abre a busca de comandos, "/" vai para o campo de mensagem, arrastar
 //   arquivos sobre um aparelho manda só para ele, anel de progresso no avatar de quem está recebendo.
 // - App: instalar na tela inicial, receber arquivos pelo "Compartilhar" do celular, ler o QR com a câmera.
-import { t, bytes } from './i18n.js?v=202611251757';
-import { normalizeRoom, roomFromLocation } from './device.js?v=202611251757';
-import * as hist from './history.js?v=202611251757';
-import { spring, reduced, tick } from './motion.js?v=202611251757';
-import { glass, refracts } from './glass.js?v=202611251757';
+import { t, bytes } from './i18n.js?v=202611251832';
+import { normalizeRoom, roomFromLocation } from './device.js?v=202611251832';
+import * as hist from './history.js?v=202611251832';
+import { spring, reduced, tick } from './motion.js?v=202611251832';
+import { glass, refracts } from './glass.js?v=202611251832';
 
 let api = null;
 const $ = (s, el = document) => el.querySelector(s);
@@ -277,8 +277,9 @@ function messageMenu(v, on) {
   const feed = $('#feed');
   if (!feed) return;
   let timer = null, start = null;
+  const target = el => el.closest('.msg .body') || el.closest('#feed > .xfer');
   on(feed, 'pointerdown', e => {
-    const body = e.target.closest('.msg .body');
+    const body = target(e.target);
     if (!body || e.pointerType === 'mouse') return;
     start = { x: e.clientX, y: e.clientY };
     body.classList.add('pressing');
@@ -288,13 +289,13 @@ function messageMenu(v, on) {
     if (!timer) return;
     if (e.type === 'pointermove' && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 8) return;
     clearTimeout(timer); timer = null;
-    $$('.msg .body.pressing', feed).forEach(b => b.classList.remove('pressing'));
+    $$('.pressing', feed).forEach(b => b.classList.remove('pressing'));
   };
   on(feed, 'pointermove', cancel);
   on(feed, 'pointerup', cancel);
   on(feed, 'pointercancel', cancel);
   on(feed, 'contextmenu', e => {
-    const body = e.target.closest('.msg .body');
+    const body = target(e.target);
     if (!body || getSelection()?.toString()) return;
     e.preventDefault();
     openMenu(body);
@@ -303,9 +304,10 @@ function messageMenu(v, on) {
 
 function openMenu(body) {
   tick(12);
-  const msg = body.closest('.msg');
-  const text = body.innerText;
-  const links = [...body.querySelectorAll('a[href]')].map(a => a.href);
+  const card = body.matches('.xfer');
+  const msg = card ? body : body.closest('.msg');
+  const text = card ? '' : body.innerText;
+  const links = card ? [] : [...body.querySelectorAll('a[href]')].map(a => a.href);
   const r = msg.getBoundingClientRect();
   const layer = document.createElement('div');
   layer.className = 'ctx';
@@ -313,17 +315,20 @@ function openMenu(body) {
   clone.classList.remove('cont');
   clone.classList.add('lifted');
   clone.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;margin:0`;
+  const save = card ? body.querySelector('a[download]') : null;
   const items = [
-    { label: t('Copiar'), icon: api.ICON.copy, run: () => api.copy(text, t('Copiado')) },
+    ...(card ? [] : [{ label: t('Copiar'), icon: api.ICON.copy, run: () => api.copy(text, t('Copiado')) }]),
     ...links.slice(0, 1).flatMap(u => [
       { label: t('Abrir link'), icon: api.ICON.link, run: () => open(u, '_blank', 'noopener') },
       { label: t('Copiar link'), icon: api.ICON.link, run: () => api.copy(u, t('Link copiado')) }
-    ])
+    ]),
+    ...(save ? [{ label: t('Salvar arquivo'), icon: api.ICON.down, run: () => save.click() }] : []),
+    { label: t('Remover deste aparelho'), icon: api.ICON.trash, danger: true, run: () => api.current()?.forgetEl(msg) }
   ];
   const menu = document.createElement('div');
   menu.className = 'ctx-menu';
   menu.setAttribute('role', 'menu');
-  menu.innerHTML = items.map((it, i) => `<button type="button" role="menuitem" data-i="${i}"><span>${api.esc(it.label)}</span>${it.icon}</button>`).join('');
+  menu.innerHTML = items.map((it, i) => `<button type="button" role="menuitem" data-i="${i}"${it.danger ? ' class="danger"' : ''}><span>${api.esc(it.label)}</span>${it.icon}</button>`).join('');
   layer.append(clone, menu);
   document.body.appendChild(layer);
   // Menu abaixo da mensagem (ou acima, se não couber), alinhado ao lado dela.

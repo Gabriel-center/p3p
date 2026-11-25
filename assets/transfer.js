@@ -7,9 +7,9 @@
 // Antes dos pedaços de cada bloco vai {x:'sum', b, h} com o SHA-256 do bloco original. Quem recebe descompacta,
 // calcula o SHA-256 de novo e só grava se for igual; se não for, pede o bloco de novo (3 tentativas, depois falha).
 // Assim cada arquivo chega byte a byte igual ao original, com ou sem compressão.
-import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611251757';
-import { createSink } from './storage.js?v=202611251757';
-import { randomId } from './device.js?v=202611251757';
+import { BLOCK_SIZE, FRAME_SIZE, CLOUD_SWITCH_MS } from './config.js?v=202611251832';
+import { createSink } from './storage.js?v=202611251832';
+import { randomId } from './device.js?v=202611251832';
 
 const HIGH_WATER = 8 * 1024 * 1024;
 const PREFETCH = 3;
@@ -124,7 +124,8 @@ export function cleanBatch(b) {
     name: String(x?.name || 'arquivo').slice(0, 200), size: Math.max(0, +x?.size || 0), type: String(x?.type || '').slice(0, 120),
     thumb: cleanThumb(x?.thumb), media: cleanMedia(x?.media)
   })) : null;
-  return { id: String(b.id), i, n, items };
+  const fids = Array.isArray(b.fids) ? b.fids.slice(0, 300).map(x => (ID_RE.test(String(x)) ? String(x) : null)) : null;
+  return { id: String(b.id), i, n, items, fids };
 }
 
 // ---------- gerente ----------
@@ -261,7 +262,10 @@ export class Outgoing {
     this.type = file.type || '';
     this.peerId = peerId;
     this.peerName = info.peerName || '';
-    this.batch = info.batch || null;     // { id, i, n, items }
+    this.batch = info.batch || null;     // { id, i, n, items, fids }
+    this.fid = info.fid || null;         // id do arquivo na conversa (o mesmo para todos que recebem)
+    this.serve = !!info.serve;           // pedido por outro aparelho para um cartão antigo: sem cartão novo aqui
+    this.post = info.post || null;       // { id, ts, priv }: o cartão da conversa a que pertence
     this.metaP = info.meta || null;      // Promise → { thumb, media, batch }
     this.thumb = null;
     this.media = null;
@@ -377,7 +381,7 @@ export class Outgoing {
     this.state = 'waiting';
     this.mgr.changed(this);
     const offer = {
-      x: 'offer', id: this.id, num: this.num, name: this.name, size: this.size, type: this.type,
+      x: 'offer', id: this.id, num: this.num, fid: this.fid, post: this.post, name: this.name, size: this.size, type: this.type,
       blocks: this.blocks, blockSize: this.blockSize, codec: this.codec,
       batch: this.batch, thumb: this.thumb, media: this.media
     };
@@ -618,6 +622,9 @@ export class Incoming {
     this.blockSize = Math.min(16 * 1024 * 1024, Number(m.blockSize) || BLOCK_SIZE);
     this.codec = ['zstd', 'deflate'].includes(m.codec) ? m.codec : 'none';
     this.batch = cleanBatch(m.batch);
+    this.fid = ID_RE.test(String(m.fid || '')) ? String(m.fid) : null;
+    const pp = m.post && typeof m.post === 'object' ? m.post : null;
+    this.post = pp && ID_RE.test(String(pp.id || '')) ? { id: String(pp.id), ts: Math.max(0, +pp.ts || 0) || Date.now(), priv: !!pp.priv } : null;
     this.thumb = cleanThumb(m.thumb);
     this.media = cleanMedia(m.media);
     this.sums = new Map();   // bloco → SHA-256 esperado
@@ -718,6 +725,7 @@ export class Incoming {
   async finish() {
     const blob = await this.sink.finish(this.type);
     this.blob = blob;
+    this.disk = this.sink.kind === 'disk' ? this.sink.name : null;
     this.url = URL.createObjectURL(blob);
     this.state = 'done';
     this.finishedAt = Date.now();

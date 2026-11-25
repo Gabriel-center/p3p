@@ -25,6 +25,11 @@ https://gabriel-center.github.io/p3p/?sala01
 - **Convite:** o QR code fica sempre na lateral (e na conversa vazia), mesmo com gente na sala, e abre grande ao tocar.
 - **Presença:** quem perde a conexão fica "ausente" por 30 s antes de sair da sala. Uma queda rápida de rede ou recarregar a página não aparece para os outros. Sair pela seta de voltar avisa na hora.
 - **Histórico:** local, no IndexedDB do navegador. Nunca vai para o servidor.
+- **Conversa guardada no aparelho** (`assets/vault.js`): fotos, vídeos e arquivos que passaram pela conversa continuam lá depois de recarregar, para quem enviou e para quem recebeu. O arquivo fica no disco do navegador (OPFS; onde não há, no IndexedDB) e nunca vai para o servidor.
+  - **Quem entra depois** vê os cartões (nome, tamanho, miniatura desfocada) assim que abre conexão direta com alguém que estava lá. Tocar baixa o arquivo de um aparelho da sala que tem a cópia, como no WhatsApp; "Baixar os N que faltam" pega o resto do lote. Sem ninguém com o arquivo na sala, o cartão avisa. Se o arquivo também foi pela nuvem da sala, baixa de lá.
+  - **Só para alguns:** o que foi mandado só para um aparelho fica só com ele e com quem mandou.
+  - **Remover deste aparelho** (toque longo ou botão direito na versão de teste; botão no cartão e lixeira ao lado de "copiar" na principal): apaga a mensagem ou o cartão e os arquivos daqui, e não volta quando outros aparelhos sincronizam.
+  - **Limpeza:** cada arquivo sai do aparelho depois de 48 h sem ser aberto, salvo, compactado ou pedido por outro aparelho (o cartão fica, e dá para pedir de novo a quem ainda tem). Se este aparelho passa 48 h sem entrar na sala, tudo dela some daqui, como o servidor faz com as mensagens de uma sala parada. "Apagar tudo" apaga também o que cada aparelho guardava.
 - **Interface:** tema claro, escuro ou automático (escolha em Configurações, salva no aparelho). Fontes Red Hat servidas pelo próprio site.
 
 ## Visual e versão de teste
@@ -91,6 +96,7 @@ node test/adaptive.test.mjs                      # ajuste automático do nível 
 node test/e2e.cjs <node_modules com puppeteer-core e @sparticuz/chromium> <pasta>
 CHROME=/usr/bin/google-chrome node test/e2e.cjs <node_modules com puppeteer-core> <pasta>   # com o Chrome instalado
 CHROME=/usr/bin/google-chrome node test/vidro.e2e.cjs <node_modules com puppeteer-core> <pasta> [qr.y4m]   # versão de teste: gestos, ⌘K, compartilhar, leitor de QR
+CHROME=/usr/bin/google-chrome node test/vault.e2e.cjs <node_modules com puppeteer-core> [./ ou vidro/]   # conversa guardada: recarregar, quem entra depois, remover e limpeza
 ```
 
 O teste ponta a ponta abre três navegadores e cobre:

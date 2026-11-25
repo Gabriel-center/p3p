@@ -5,15 +5,15 @@ async function opfsRoot() {
   try { return await navigator.storage.getDirectory(); } catch { return null; }
 }
 
-/** Apaga recebimentos com mais de 24 h (sobras de sessões anteriores). */
-export async function cleanupOld() {
+/** Apaga recebimentos com mais de 24 h (sobras de sessões anteriores), menos os que o cofre ainda guarda (keep). */
+export async function cleanupOld(keep = new Set()) {
   const root = await opfsRoot();
   if (!root || !root.entries) return;
   const limit = Date.now() - 24 * 3600 * 1000;
   try {
     for await (const [name] of root.entries()) {
       const ts = Number(name.slice(PREFIX.length).split('-')[0]);
-      if (name.startsWith(PREFIX) && ts && ts < limit) { try { await root.removeEntry(name); } catch { /* em uso */ } }
+      if (name.startsWith(PREFIX) && ts && ts < limit && !keep.has(name)) { try { await root.removeEntry(name); } catch { /* em uso */ } }
     }
   } catch { /* sem permissão */ }
 }
@@ -28,6 +28,7 @@ export async function createSink() {
         const w = await fh.createWritable();
         return {
           kind: 'disk',
+          name,
           async write(position, data) { await w.write({ type: 'write', position, data }); },
           async finish(type) { await w.close(); const f = await fh.getFile(); return type ? new Blob([f], { type }) : f; },
           async abort() { try { await w.abort(); } catch { /* ok */ } try { await root.removeEntry(name); } catch { /* ok */ } }

@@ -142,7 +142,16 @@ const EN = {
   '{n} arquivos': '{n} files', 'Ver os {n} arquivos': 'See the {n} files', 'Baixando {name}': 'Downloading {name}', 'Compactando {p}%': 'Zipping {p}%',
   'arquivos': 'files', 'Zip pronto: {n} arquivos, {size}': 'Zip ready: {n} files, {size}', 'Você': 'You',
   // visualizador
-  'Visualizar': 'Viewer', 'Anterior': 'Previous', 'Próximo': 'Next'
+  'Visualizar': 'Viewer', 'Anterior': 'Previous', 'Próximo': 'Next',
+  // Cofre: a conversa continua neste aparelho; quem entra depois pede os arquivos a quem tem.
+  'Remover deste aparelho': 'Remove from this device', 'Removido deste aparelho': 'Removed from this device',
+  'Enviado por você': 'Sent by you', 'Toque para baixar': 'Tap to download', 'Não está neste aparelho': 'Not on this device',
+  'Baixar os {n} que faltam': 'Download the {n} missing', 'Todos neste aparelho': 'All on this device',
+  '{d} de {n} neste aparelho': '{d} of {n} on this device', 'Baixando da nuvem': 'Downloading from the cloud', 'Pedindo a {name}': 'Asking {name}',
+  'Não está neste aparelho, e nenhum aparelho com ele está na sala agora.': 'Not on this device, and no device that has it is in the room right now.',
+  'Nenhum aparelho com este arquivo está na sala agora.': 'No device with this file is in the room right now.',
+  '{name} não respondeu. Tente de novo.': "{name} didn't answer. Try again.",
+  'Espere terminar ou cancele antes de remover.': 'Wait for it to finish, or cancel it, before removing.',
 };
 
 export function t(s, vars) {

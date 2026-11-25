@@ -1,17 +1,18 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611251757';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611251757';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611251757';
-import { RoomClient } from './room-client.js?v=202611251757';
-import { Mesh } from './mesh.js?v=202611251757';
-import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611251757';
-import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611251757';
-import { makeZip } from './zip.js?v=202611251757';
-import { Viewer } from './viewer.js?v=202611251757';
-import { CloudUpload, downloadUrl } from './cloud.js?v=202611251757';
-import { cleanupOld } from './storage.js?v=202611251757';
-import { SpeedMeter } from './speed.js?v=202611251757';
-import * as hist from './history.js?v=202611251757';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611251832';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611251832';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611251832';
+import { RoomClient } from './room-client.js?v=202611251832';
+import { Mesh } from './mesh.js?v=202611251832';
+import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611251832';
+import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611251832';
+import { makeZip } from './zip.js?v=202611251832';
+import { Viewer } from './viewer.js?v=202611251832';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611251832';
+import { cleanupOld } from './storage.js?v=202611251832';
+import { SpeedMeter } from './speed.js?v=202611251832';
+import * as hist from './history.js?v=202611251832';
+import * as vault from './vault.js?v=202611251832';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
@@ -67,7 +68,7 @@ const VIDRO = SKIN === 'vidro';
 // Versão de teste (vidro/index.html, data-next): movimento, gestos, app instalável, atalhos e leitor de QR.
 // Tudo isso mora em next.js e só é carregado nessa página.
 const NEXT = 'next' in document.documentElement.dataset;
-const nextMod = NEXT ? import('./next.js?v=202611251757') : null;
+const nextMod = NEXT ? import('./next.js?v=202611251832') : null;
 if (VIDRO) Object.assign(ICON, {
   send: svg('<path d="M12 18.5V6M6.5 11.5L12 6l5.5 5.5"/>'),
   clip: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
@@ -389,6 +390,14 @@ class RoomView {
     this.delivered = new Set();
     this.dirty = new Set();
     this.unread = 0;
+    // Cofre (vault.js): o que passou pela conversa continua aqui depois de recarregar.
+    this.stored = new Map();         // fid → cartão guardado (de antes de recarregar, ou que outro aparelho mostrou)
+    this.liveFids = new Map();       // fid → envio/recebimento desta sessão (o cartão ao vivo é o que vale)
+    this.posts = new Map();          // id → cartão (como no cofre)
+    this.localFiles = new Map();     // fid → File enviado nesta sessão (enquanto a cópia no cofre não termina)
+    this.localHave = new Map();      // fid → { intact } arquivos que estão neste aparelho
+    this.peerHas = new Map();        // fid → Set(peerId) quem na sala tem o arquivo
+    this.forgot = new Set();         // ids esquecidos neste aparelho
     this.welcomed = false;
     this.downSince = 0;
     this.tab = 'feed';
@@ -405,6 +414,7 @@ class RoomView {
     if (pw) this.client.password = pw;
 
     this.render();
+    this.vaultReady = this.restore();
     this.viewer = new Viewer({ resolve: id => this.viewItem(id), esc, icons: ICON, t, fancy: NEXT });
     this.wire();
     if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__p2p = this;
@@ -420,6 +430,7 @@ class RoomView {
     this.timers.push(setInterval(() => this.live(), 250));
     this.upMeters = new Map();
     this.timers.push(setInterval(() => this.renderShelf(), 60000));
+    this.timers.push(setInterval(() => vault.seen(this.room), 10 * 60000));
     nextReady?.then(m => { if (!this.destroyed) m?.onRoom(this); });
   }
 
@@ -634,6 +645,7 @@ class RoomView {
       const p = this.peers.get(e.detail.peerId);
       if (!p) return;
       this.peers.delete(p.peerId);
+      this.peerGone(p.peerId);
       hist.logEvent({ type: 'leave', room: this.room, name: p.name, kind: p.kind });
       this.peersChanged();
     });
@@ -653,6 +665,7 @@ class RoomView {
     });
     c.addEventListener('wiped', e => {
       $$('#feed .msg, #feed .sys').forEach(el => el.remove());
+      this.wipeLocal();
       this.files.clear();
       this.renderShelf();
       this.sys(t('{name} apagou tudo nesta sala', { name: e.detail.by }));
@@ -668,7 +681,9 @@ class RoomView {
     // Conexões diretas
     m.addEventListener('path', e => this.onPath(e.detail));
     m.addEventListener('open', () => this.renderNet());
-    m.addEventListener('data', e => { if (e.detail.msg.x === 'chat' && e.detail.msg.msg) this.onChat(e.detail.msg.msg); });
+    m.addEventListener('data', e => { if (e.detail.msg.x === 'chat' && e.detail.msg.msg) this.onChat(e.detail.msg.msg); else this.onVaultMsg(e.detail.peerId, e.detail.msg); });
+    m.addEventListener('open', e => this.syncTo(e.detail.peerId));
+    m.addEventListener('gone', e => this.peerGone(e.detail.peerId));
 
     // Transferências
     tr.addEventListener('update', e => this.markDirty(e.detail));
@@ -691,7 +706,7 @@ class RoomView {
     this.welcomed = true;
     this.files = new Map(w.files.map(f => [f.id, f]));
     for (const msg of w.messages) this.onChat(msg, true);
-    for (const f of w.files) this.maybeDelivered(f);
+    this.vaultReady.then(() => { if (!this.destroyed) for (const f of w.files) this.maybeDelivered(f); });
     if (this.client.password && this.client.protected) this.rememberPassword(this.client.password, null);
     this.renderPeers(); this.renderTargets(); this.renderShelf(); this.renderNet();
     this.updateEmpty();
@@ -924,7 +939,11 @@ class RoomView {
   append(el) {
     const feed = $('#feed');
     const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
-    feed.appendChild(el);
+    // Histórico (mensagens do servidor e cartões do cofre) chega fora de ordem: entra no lugar pelo horário.
+    const ts = Number(el.dataset.ts) || 0;
+    let before = null;
+    if (ts) for (const c of feed.children) { if ((Number(c.dataset.ts) || 0) > ts) { before = c; break; } }
+    feed.insertBefore(el, before);
     $('#feed-empty')?.remove();
     if (atBottom) this.scrollFeed();
   }
@@ -947,6 +966,7 @@ class RoomView {
   }
 
   onChat(msg, fromHistory) {
+    if (this.forgot.has(msg.id)) return;
     if (this.msgIds.has(msg.id)) { this.markSent(msg.id); return; }
     this.renderMsg(msg, false);
     if (!fromHistory && msg.fromDevice !== this.me.deviceId) this.notify();
@@ -964,8 +984,9 @@ class RoomView {
     d.dataset.from = from;
     d.dataset.ts = String(msg.ts);
     d.innerHTML = `<div class="who">${mine ? '' : `<b>${esc(msg.fromName)}</b>`}<time>${esc(time(msg.ts))}</time></div>
-      <div class="row"><div class="body" title="${esc(time(msg.ts))}">${linkify(msg.text)}</div><button class="copy" type="button" aria-label="${esc(t('Copiar'))}" title="${esc(t('Copiar'))}">${ICON.copy}</button></div>`;
+      <div class="row"><div class="body" title="${esc(time(msg.ts))}">${linkify(msg.text)}</div><button class="copy" type="button" aria-label="${esc(t('Copiar'))}" title="${esc(t('Copiar'))}">${ICON.copy}</button><button class="copy forget" type="button" aria-label="${esc(t('Remover deste aparelho'))}" title="${esc(t('Remover deste aparelho'))}">${ICON.trash}</button></div>`;
     d.querySelector('.copy').addEventListener('click', () => copy(msg.text, t('Copiado')));
+    d.querySelector('.forget').addEventListener('click', () => this.forgetEl(d));
     this.append(d);
   }
 
@@ -993,31 +1014,37 @@ class RoomView {
     const targets = this.target === 'all' ? others : others.filter(p => p.peerId === this.target);
     // Miniaturas (uma de cada vez) para quem recebe ver a prévia antes do arquivo chegar.
     const metas = thumbsInOrder(files);
+    // Cada arquivo ganha um id que vale em todos os aparelhos: é por ele que alguém pede o arquivo depois.
+    const fids = files.map(() => randomId(10));
     // Vários arquivos juntos viram um lote: um cartão só, em grade, como um álbum do WhatsApp.
     let batch = null, batchP = null;
     if (files.length > 1) {
-      batch = { id: randomId(8), n: files.length, items: files.slice(0, 300).map(f => ({ name: f.name, size: f.size, type: f.type || '' })) };
+      batch = { id: randomId(8), n: files.length, fids: fids.slice(0, 300), items: files.slice(0, 300).map(f => ({ name: f.name, size: f.size, type: f.type || '' })) };
       batchP = Promise.all(metas.slice(0, 4)).then(ms => ({ ...batch, items: batch.items.map((x, i) => (ms[i] ? { ...x, thumb: ms[i].thumb, media: ms[i].media } : x)) }));
     }
+    const priv = this.target !== 'all';
+    const post = { id: batch ? batch.id : fids[0], room: this.room, ts: Date.now(), from: { peerId: this.me.peerId, deviceId: this.me.deviceId, name: this.me.name }, to: priv ? targets.map(p => p.deviceId).filter(Boolean) : null };
+    const ref = { id: post.id, ts: post.ts, priv };
     files.forEach((f, i) => {
       const b = batch ? { ...batch, i } : null;
       const meta = Promise.all([metas[i], batchP]).then(([m, bp]) => ({ thumb: m?.thumb || null, media: m?.media || null, batch: bp ? { ...bp, i } : null }));
       const cloudPeers = targets.filter(p => p.away || (this.mesh.path(p.peerId) === 'server' && !this.mesh.isOpen(p.peerId)));
       for (const p of targets) {
         if (cloudPeers.includes(p)) continue;
-        this.transfers.send(f, p.peerId, { peerName: p.name, batch: b, meta });
+        this.transfers.send(f, p.peerId, { peerName: p.name, batch: b, meta, fid: fids[i], post: ref });
       }
-      if (cloudPeers.length) this.cloudDeliver(f, cloudPeers, null, b, meta);
+      if (cloudPeers.length) this.cloudDeliver(f, cloudPeers, null, b, meta, fids[i]);
     });
+    this.keepSent(post, files, fids, metas);
     if (this.tab !== 'feed' && this.tabsVisible()) this.selectTab('feed');
   }
 
   /** Envia pela nuvem para aparelhos sem conexão direta. */
-  cloudDeliver(file, peers, fromOutgoing, batch = null, metaP = null) {
+  cloudDeliver(file, peers, fromOutgoing, batch = null, metaP = null, fid = fromOutgoing?.fid || null) {
     const up = new CloudUpload(this.client, file, { to: peers.length === 1 ? peers[0].peerId : null, byName: this.me.name, byPeer: this.me.peerId });
     const cardId = fromOutgoing ? fromOutgoing.id : `c-${randomId(6)}`;
     const model = {
-      kind: 'cloud-out', id: cardId, up, peers, name: file.name, size: file.size, tr: fromOutgoing,
+      kind: 'cloud-out', id: cardId, up, peers, name: file.name, size: file.size, tr: fromOutgoing, fid,
       batch: batch || fromOutgoing?.batch || null, thumb: fromOutgoing?.thumb || null, media: fromOutgoing?.media || null
     };
     this.cardModels = this.cardModels || new Map();
@@ -1030,9 +1057,9 @@ class RoomView {
       // Aviso para quem recebe, com a miniatura e o lote. O servidor aceita mensagens de até 64 KB.
       const b = model.batch;
       const data = {
-        ch: 'app', kind: 'cloud-delivery', fileId: f.id, tid: fromOutgoing?.id || null, name: f.name, size: f.size, type: file.type || '',
+        ch: 'app', kind: 'cloud-delivery', fileId: f.id, tid: fromOutgoing?.id || null, fid, post: fromOutgoing?.post || null, name: f.name, size: f.size, type: file.type || '',
         wire: up.wireDone, enc: up.gzip ? 'gzip' : null, thumb: model.thumb, media: model.media,
-        batch: b ? { id: b.id, i: b.i, n: b.n, items: b.items ? b.items.slice(0, 100) : null } : null
+        batch: b ? { id: b.id, i: b.i, n: b.n, items: b.items ? b.items.slice(0, 100) : null, fids: b.fids ? b.fids.slice(0, 100) : null } : null
       };
       if (JSON.stringify(data).length > 50000 && data.batch?.items) data.batch.items = data.batch.items.map(x => ({ name: x.name, size: x.size, type: x.type }));
       if (JSON.stringify(data).length > 50000 && data.batch) data.batch.items = null;
@@ -1109,8 +1136,12 @@ class RoomView {
     const sender = this.peers.get(from)?.name || file.byName || '';
     // Se começou direto e passou para a nuvem, herda o lote e a miniatura do recebimento direto.
     const prev = tid ? this.transfers.inc.get(tid) : null;
+    const fid = /^[A-Za-z0-9_-]{1,32}$/.test(String(extra.fid || '')) ? String(extra.fid) : null;
+    // Já está na conversa como cartão guardado: o arquivo da nuvem passa a ser mais um jeito de baixá-lo.
+    const st = fid ? this.stored.get(fid) : this.storedByCloud(file.id);
+    if (st) { st.cloudFile = file; this.markDirty(st); return; }
     const model = {
-      kind: 'cloud-in', id: tid || `d-${file.id}`, file, from: sender, fromPeer: from || file.byPeer || '',
+      kind: 'cloud-in', id: tid || `d-${file.id}`, file, from: sender, fromPeer: from || file.byPeer || '', fid,
       batch: cleanBatch(extra.batch) || prev?.batch || null, thumb: cleanThumb(extra.thumb) || prev?.thumb || null,
       media: cleanMedia(extra.media) || prev?.media || null, wire: Number(extra.wire) || null
     };
@@ -1120,6 +1151,7 @@ class RoomView {
     (this.deliveredAs ||= new Map()).set(file.id, model.id);
     this.markDirty(model);
     this.notify();
+    if (fid) this.keepCloudPost(model, extra);
     hist.logEvent({ type: 'received', room: this.room, file: file.name, size: file.size, from: sender, path: 'server' });
   }
 
@@ -1184,6 +1216,19 @@ class RoomView {
   touch(m) { if (m) this.markDirty(m); }
 
   renderCard(m) {
+    // Arquivo pedido por outro aparelho para um cartão antigo: não vira cartão aqui.
+    if (m.serve) return;
+    // Chegando para um cartão guardado (alguém pediu o arquivo): o progresso aparece no próprio cartão.
+    if (m.dir === 'in' && m.fid && this.stored.has(m.fid) && !this.liveFids.has(m.fid)) {
+      const st = this.stored.get(m.fid);
+      st.tr = m;
+      st.wanted = null;
+      if (m.state === 'done' && !m.kept) { m.kept = true; st.blob = m.blob; this.keepReceived(m, true); }
+      this.renderCard(st);
+      return;
+    }
+    if (m.fid && m.kind !== 'stored' && !this.liveFids.has(m.fid)) this.liveFids.set(m.fid, m);
+    if (m.dir === 'in' && m.state === 'done' && m.fid && !m.kept) { m.kept = true; this.keepReceived(m, false); }
     const id = m.id;
     const current = this.cardModels?.get(id) || m;
     this.models.set(id, current);
@@ -1202,7 +1247,8 @@ class RoomView {
       if (m.dir === 'in' && m.state === 'receiving' && !m.notified) { m.notified = true; this.notify(); }
       const el = document.createElement('article');
       el.dataset.card = id;
-      el.addEventListener('click', e => this.onCardAction(e, id));
+      el.dataset.ts = String(m.ts || Date.now());
+      el.addEventListener('click', e => { if (e.target.closest('a[download]')) this.used(this.cards.get(id)?.model); this.onCardAction(e, id); });
       entry = { el };
       this.cards.set(id, entry);
       this.append(el);
@@ -1212,7 +1258,7 @@ class RoomView {
     entry.model = model;
     const it = this.itemInfo(model);
     const path = this.cardPath(model);
-    const sig = [model.kind || model.dir, model.state, model.up?.state, path, this.peers.get(model.peerId)?.name, !!it.preview, !!it.thumb, it.intact, it.media?.w].join('|');
+    const sig = [model.kind || model.dir, model.state, model.up?.state, path, this.peers.get(model.peerId)?.name, !!it.preview, !!it.thumb, it.intact, it.media?.w, it.state, it.available, model.tr?.state].join('|');
     if (entry.sig !== sig) {
       entry.sig = sig;
       const media = it.kind === 'image' || it.kind === 'video';
@@ -1222,8 +1268,9 @@ class RoomView {
     this.logTerminal(model);
   }
 
-  isMine(m) { return m.dir === 'out' || m.kind === 'cloud-out'; }
+  isMine(m) { return m.kind === 'stored' ? m.mine : m.dir === 'out' || m.kind === 'cloud-out'; }
   cardPath(m) {
+    if (m.kind === 'stored') return m.tr ? this.cardPath(m.tr) : '';
     if (m.kind === 'cloud-out' || m.kind === 'cloud-in') return 'server';
     if (m.finalPath) return m.finalPath;
     const p = this.mesh.path(m.peerId);
@@ -1239,6 +1286,9 @@ class RoomView {
       <div style="min-width:0"><div class="fname" title="${esc(name)}">${esc(name)}</div><div class="fmeta"><span>${who}</span><span class="tnum">${esc(bytes(size))}</span></div></div>${pill(path)}</div>`;
     const btn = (act, label, cls = 'line') => `<button class="btn ${cls} sm" type="button" data-act="${act}">${esc(label)}</button>`;
     const done = text => `<div class="ok-note done">${ICON.check}<span>${esc(text)}</span></div>`;
+    const forget = btn('forget', t('Remover deste aparelho'), 'quiet');
+
+    if (m.kind === 'stored') return this.storedCardHTML(m, top, btn, forget);
 
     if (m.kind === 'cloud-in') {
       return top(m.file.name, m.file.size, `${t('De {name}', { name: `<b>${esc(m.from)}</b>` })}`, 'server') +
@@ -1281,8 +1331,8 @@ class RoomView {
         const graph = meter && meter.lastBin >= 0 ? `<div class="speedgraph">${meter.svg()}</div>` : '';
         const summary = `${out ? t('Enviado em {t}', { t: duration(ms) }) : t('Recebido em {t}', { t: duration(ms) })}${avg ? ` · ${t('média de {s}', { s: avg })}` : ''}`;
         body = out
-          ? `${graph}<div class="bline">${done(summary)}</div>`
-          : `${graph}<div class="bline">${done(summary)}</div><div class="acts"><a class="btn solid sm" href="${esc(m.url)}" download="${esc(m.name)}">${ICON.down}${esc(t('Salvar arquivo'))}</a>${btn('store', t('Guardar na sala'), 'quiet')}</div>`;
+          ? `${graph}<div class="bline">${done(summary)}</div>${m.fid ? `<div class="acts">${forget}</div>` : ''}`
+          : `${graph}<div class="bline">${done(summary)}</div><div class="acts"><a class="btn solid sm" href="${esc(m.url)}" download="${esc(m.name)}">${ICON.down}${esc(t('Salvar arquivo'))}</a>${btn('store', t('Guardar na sala'), 'quiet')}${m.fid ? forget : ''}</div>`;
         break;
       }
       case 'cloud':
@@ -1305,6 +1355,7 @@ class RoomView {
 
   /** O que a interface precisa saber de um arquivo, venha de onde vier: envio direto, recebimento ou nuvem. */
   itemInfo(m) {
+    if (m.kind === 'stored') return this.storedInfo(m);
     const k = m.kind;
     const file = k === 'cloud-in' ? m.file : null;
     const name = file ? file.name : m.name;
@@ -1374,6 +1425,7 @@ class RoomView {
       case 'cloud': return t('Indo pela nuvem');
       case 'cancelled': return t('Cancelado');
       case 'failed': return t('Falhou');
+      case 'missing': return x.available ? t('Toque para baixar') : t('Não está neste aparelho');
       default: return '';
     }
   }
@@ -1388,9 +1440,11 @@ class RoomView {
     if (more) return `<span class="more tnum">+${more}</span>`;
     const dur = x.kind === 'video' && x.media?.dur ? `<span class="dur tnum">${ICON.play}${clock(x.media.dur)}</span>` : '';
     if (['failed', 'cancelled', 'stalled'].includes(x.state)) return `<span class="ring bad">${ICON.warn}</span>${dur}`;
-    if (x.state !== 'done') return this.ringHTML(x) + dur;
-    if (x.kind === 'video') return `<span class="playbtn">${ICON.play}</span>${dur}`;
+    if (x.state !== 'done' && !['missing', 'loading'].includes(x.state)) return this.ringHTML(x) + dur;
+    if (x.state === 'done' && x.kind === 'video') return `<span class="playbtn">${ICON.play}</span>${dur}`;
     if (x.kind === 'image' && x.remote && !x.preview) return `<span class="ring idle">${ICON.down}</span>`;
+    if (x.state === 'missing') return x.kind === 'image' || x.kind === 'video' ? `<span class="ring idle${x.available ? '' : ' off'}">${ICON.down}</span>${dur}` : '';
+    if (x.state === 'loading') return dur;
     return dur;
   }
   updateRings(root, items) {
@@ -1417,6 +1471,7 @@ class RoomView {
 
   // Lote: um cartão só, com até 4 quadrados e "+N" no último, a lista completa e "Baixar tudo (.zip)".
   albumKey(m) {
+    if (m.kind === 'stored') return m.batch && m.batch.n > 1 ? `s:${m.postId}` : null;
     const b = m.batch;
     if (!b || !(b.n > 1)) return null;
     const who = m.kind === 'cloud-out' ? m.peers.map(p => p.peerId).sort().join(',') : m.kind === 'cloud-in' ? m.fromPeer : m.peerId;
@@ -1429,8 +1484,13 @@ class RoomView {
     if (!a) {
       const el = document.createElement('article');
       el.dataset.album = key;
-      a = { key, el, ids: [], n: b?.n || 2, items: null, mine: this.isMine(m), peerId: m.peerId || m.fromPeer || m.peers?.[0]?.peerId || '', sig: '', open: false };
-      el.addEventListener('click', e => this.onAlbumAction(e, key));
+      el.dataset.ts = String(m.ts || Date.now());
+      a = { key, el, ids: [], n: b?.n || 2, items: null, mine: this.isMine(m), stored: m.kind === 'stored', peerId: m.peerId || m.fromPeer || m.peers?.[0]?.peerId || '', sig: '', open: false };
+      el.addEventListener('click', e => {
+        const dl = e.target.closest('a[download]');
+        if (dl) { const row = dl.closest('li')?.querySelector('[data-id]'); const x = row && this.albumItems(a).find(y => y.id === row.dataset.id); this.used(x?.m); }
+        this.onAlbumAction(e, key);
+      });
       el.addEventListener('toggle', e => { if (e.target.matches?.('details')) a.open = e.target.open; }, true);
       this.albums.set(key, a);
       this.append(el);
@@ -1444,7 +1504,7 @@ class RoomView {
       if (b.items && (!a.items || thumbs(b.items) >= thumbs(a.items))) a.items = b.items;
     }
     a.names ||= new Set();
-    const name = a.mine ? (m.peers ? m.peers.map(p => p.name).join(', ') : this.peers.get(m.peerId)?.name || m.peerName) : (m.from || this.peers.get(m.peerId)?.name || '');
+    const name = a.stored ? (a.mine ? '' : m.from) : a.mine ? (m.peers ? m.peers.map(p => p.name).join(', ') : this.peers.get(m.peerId)?.name || m.peerName) : (m.from || this.peers.get(m.peerId)?.name || '');
     if (name) a.names.add(name);
     // Quem recebe cancelou o lote: o que chegar depois também é cancelado.
     if (a.cancelled && m.dir === 'in' && m.state === 'receiving') m.cancel();
@@ -1475,8 +1535,8 @@ class RoomView {
     let net = 0, raw = 0;
     for (const x of items) {
       if (!x.m) continue;
-      const src = x.m.kind === 'cloud-out' ? x.m.up : x.m;
-      if (src.liveStats) { const s = src.liveStats(); net += s.net; raw += s.raw; } else if (x.state === 'done') raw += x.size;
+      const src = x.m.kind === 'cloud-out' ? x.m.up : x.m.kind === 'stored' ? x.m.tr : x.m;
+      if (src?.liveStats) { const s = src.liveStats(); net += s.net; raw += s.raw; } else if (x.state === 'done') raw += x.size;
     }
     return { net, raw };
   }
@@ -1500,7 +1560,7 @@ class RoomView {
     const inner = src
       ? `<img src="${esc(src)}" alt=""${x.preview ? '' : ' class="blur"'} decoding="async">`
       : `<span class="tfile"><span class="ext">${x.kind === 'audio' ? ICON.music : esc(x.label)}</span><span class="tn">${esc(x.name)}</span><span class="ts tnum">${esc(bytes(x.size))}</span></span>`;
-    return `<button class="tile${media && src ? '' : ' doc'}" type="button" data-act="view" data-id="${esc(x.id)}" aria-label="${esc(t('Abrir {name}', { name: x.name }))}">${inner}${this.overlayHTML(x, more)}</button>`;
+    return `<button class="tile${media && src ? '' : ' doc'}${x.state === 'missing' ? ' missing' : ''}" type="button" data-act="view" data-id="${esc(x.id)}" aria-label="${esc(t('Abrir {name}', { name: x.name }))}">${inner}${this.overlayHTML(x, more)}</button>`;
   }
 
   rowHTML(x) {
@@ -1516,18 +1576,18 @@ class RoomView {
   renderAlbum(a) {
     const items = this.albumItems(a);
     const real = items.filter(x => !x.placeholder);
-    const active = items.some(x => !['done', 'failed', 'cancelled'].includes(x.state));
+    const active = items.some(x => !['done', 'failed', 'cancelled', 'missing', 'loading'].includes(x.state));
     a.active = active;
     const cur = real.find(x => x.state === 'active') || real.find(x => x.state !== 'done') || real[real.length - 1];
     const path = cur ? this.cardPath(cur.m) : 'connecting';
-    const sig = [items.map(x => [x.id, x.state, !!x.preview, !!x.thumb, x.intact].join(':')).join(','), path, a.zipping, [...(a.names || [])].join()].join('|');
+    const sig = [items.map(x => [x.id, x.state, !!x.preview, !!x.thumb, x.intact, x.available].join(':')).join(','), path, a.zipping, [...(a.names || [])].join()].join('|');
     if (sig === a.sig) return;
     a.sig = sig;
     const n = a.n;
     const total = items.reduce((s, x) => s + (x.size || 0), 0);
     const doneN = items.filter(x => x.state === 'done').length;
     const names = [...(a.names || [])].join(', ');
-    const who = a.mine ? t('Para {name}', { name: `<b>${esc(names)}</b>` }) : t('De {name}', { name: `<b>${esc(names)}</b>` });
+    const who = a.stored && a.mine ? esc(t('Enviado por você')) : a.mine ? t('Para {name}', { name: `<b>${esc(names)}</b>` }) : t('De {name}', { name: `<b>${esc(names)}</b>` });
     let live = '';
     if (active) live = `<div class="live">${this.liveHTML(a.meter, this.albumStats(items), total)}</div>`;
     else if (a.meter && a.meter.lastBin >= 0 && a.meter.peak > 0) live = `<div class="speedgraph">${a.meter.svg()}</div>`;
@@ -1539,11 +1599,18 @@ class RoomView {
       if (outs.some(x => x.m.state === 'paused')) acts += btn('unpause', t('Continuar'));
       if (outs.some(x => x.m.state === 'interrupted')) acts += btn('retry', t('Tentar agora')) + btn('to-cloud', t('Mandar pela nuvem'), 'quiet');
       acts += btn('cancel-all', t('Cancelar tudo'), 'quiet');
-    } else if (!a.mine && doneN) {
-      acts += btn('zip', a.zipText || t('Baixar tudo (.zip)'), 'solid', ICON.zip);
-      acts += btn('each', t('Baixar separados'), 'line', ICON.down);
+    } else {
+      const missing = items.filter(x => x.state === 'missing' && x.available).length;
+      if (missing) acts += btn('fetch-all', t('Baixar os {n} que faltam', { n: missing }), 'solid', ICON.down);
+      if ((!a.mine || a.stored) && doneN) {
+        acts += btn('zip', a.zipText || t('Baixar tudo (.zip)'), missing ? 'line' : 'solid', ICON.zip);
+        acts += btn('each', t('Baixar separados'), 'line', ICON.down);
+      }
+      if (a.stored || items.some(x => x.m?.fid)) acts += btn('forget', t('Remover deste aparelho'), 'quiet');
     }
-    const status = active ? t('{d} de {n} prontos', { d: doneN, n }) : doneN === n ? (a.mine ? t('Todos enviados') : t('Todos recebidos')) : t('{d} de {n} chegaram', { d: doneN, n });
+    const status = active ? t('{d} de {n} prontos', { d: doneN, n })
+      : a.stored ? (doneN === n ? t('Todos neste aparelho') : t('{d} de {n} neste aparelho', { d: doneN, n }))
+        : doneN === n ? (a.mine ? t('Todos enviados') : t('Todos recebidos')) : t('{d} de {n} chegaram', { d: doneN, n });
     a.el.className = `xfer album has-media ${path}${a.mine ? ' mine' : ''}`;
     a.el.innerHTML = `<div class="album-grid n${Math.min(n, 4)}">${items.slice(0, 4).map((x, i) => this.tileHTML(x, i === 3 && n > 4 ? n - 4 : 0)).join('')}</div>
       <div class="xfer-top"><span class="ftype">${ICON.stack}</span><div style="min-width:0"><div class="fname">${esc(t('{n} arquivos', { n }))} · <span class="tnum">${esc(bytes(total))}</span></div><div class="fmeta"><span>${who}</span><span data-album-status>${esc(status)}</span></div></div>${pill(path)}</div>
@@ -1573,18 +1640,26 @@ class RoomView {
     if (!b || !a) return;
     const act = b.dataset.act;
     if (act === 'view') {
-      const ids = this.albumItems(a).map(x => x.id);
+      const items = this.albumItems(a);
+      const x = items.find(y => y.id === b.dataset.id);
+      // Não está neste aparelho: tocar baixa de quem tem (como no WhatsApp).
+      if (x?.state === 'missing') { this.requestFile(x.m.fid); return; }
+      const ids = items.filter(y => y.state !== 'missing').map(y => y.id);
+      this.used(x?.m);
       this.viewer.openWith(ids, Math.max(0, ids.indexOf(b.dataset.id)), b);
       return;
     }
-    if (act === 'zip') { this.zipAlbum(a); return; }
-    if (act === 'each') { this.downloadEach(a); return; }
+    if (act === 'zip') { this.albumItems(a).forEach(x => this.used(x.m)); this.zipAlbum(a); return; }
+    if (act === 'each') { this.albumItems(a).forEach(x => this.used(x.m)); this.downloadEach(a); return; }
+    if (act === 'fetch-all') { this.albumItems(a).filter(x => x.state === 'missing').forEach(x => this.requestFile(x.m.fid, { quiet: true })); return; }
+    if (act === 'forget') { this.forgetEl(a.el); return; }
     const models = a.ids.filter(Boolean).map(id => this.cardModels?.get(id) || this.models.get(id)).filter(Boolean);
     if (act === 'cancel-all') {
       if (!a.mine) a.cancelled = true;
       // Do último para o primeiro: assim a fila não começa o próximo enquanto cancela.
       for (const m of [...models].reverse()) {
-        if (m.kind === 'cloud-out') { if (['preparing', 'uploading'].includes(m.up.state)) { m.up.abort(); if (m.tr) m.tr.state = 'cancelled'; } }
+        if (m.kind === 'stored') { m.wanted = null; if (m.tr && !['done', 'failed', 'cancelled'].includes(m.tr.state)) m.tr.cancel(); m.tr = null; }
+        else if (m.kind === 'cloud-out') { if (['preparing', 'uploading'].includes(m.up.state)) { m.up.abort(); if (m.tr) m.tr.state = 'cancelled'; } }
         else if (m.cancel && !['done', 'failed', 'cancelled'].includes(m.state)) m.cancel();
       }
     } else if (act === 'pause') models.filter(m => m.state === 'sending').forEach(m => m.pause());
@@ -1690,6 +1765,7 @@ class RoomView {
       let src = null, size = 0, tr = null;
       if (m.kind === 'cloud-out') { if (m.up.state === 'uploading') { src = m.up; size = m.up.size; } }
       else if (m.dir && ['sending', 'receiving', 'interrupted', 'paused', 'stalled', 'waiting'].includes(m.state)) { src = m; size = m.size; tr = m; }
+      else if (m.kind === 'stored' && m.tr && ['receiving', 'stalled'].includes(m.tr.state)) { src = m.tr; size = m.size; tr = m.tr; }
       if (!src) continue;
       const stats = src.liveStats();
       entry.meter ||= new SpeedMeter();
@@ -1721,13 +1797,17 @@ class RoomView {
     const m = this.cards.get(id)?.model;
     if (!m) return;
     const act = b.dataset.act;
-    if (act === 'view') { this.viewer.openWith([id], 0, b); return; }
+    if (act === 'view' && m.kind === 'stored' && !this.storedInfo(m).blob && !m.tr) { this.requestFile(m.fid); return; }
+    if (act === 'view') { this.used(m); this.viewer.openWith([id], 0, b); return; }
+    if (act === 'fetch') { this.requestFile(m.fid); return; }
+    if (act === 'forget') { this.forgetEl(this.cards.get(id).el); return; }
+    if (act === 'cancel' && m.kind === 'stored') { m.wanted = null; m.tr?.cancel(); m.tr = null; this.markDirty(m); return; }
     if (act === 'cancel') m.cancel?.();
     else if (act === 'pause') m.pause?.();
     else if (act === 'unpause') m.unpause?.();
     else if (act === 'retry') { this.mesh.links.get(m.peerId)?.recreate('manual'); this.client.nudge(); }
     else if (act === 'to-cloud') this.moveToCloud(m);
-    else if (act === 'store' && m.blob) this.storeInRoom(new File([m.blob], m.name, { type: m.type }));
+    else if (act === 'store' && (m.blob || m.kind === 'stored')) { const it = this.itemInfo(m); if (it.blob) { this.used(m); this.storeInRoom(new File([it.blob], it.name, { type: it.type })); } }
     else if (act === 'cloud-cancel') { m.up.abort(); if (m.tr) m.tr.state = 'cancelled'; }
     this.markDirty(m);
   }
@@ -1748,6 +1828,368 @@ class RoomView {
       if (busy && !this.wakeLock && navigator.wakeLock && document.visibilityState === 'visible') this.wakeLock = await navigator.wakeLock.request('screen');
       if (!busy && this.wakeLock) { await this.wakeLock.release(); this.wakeLock = null; }
     } catch { this.wakeLock = null; }
+  }
+
+  // ----- cofre: a conversa continua neste aparelho depois de recarregar -----
+  async restore() {
+    await vault.seen(this.room);
+    const [forgot, have, posts] = await Promise.all([vault.forgotten(this.room), vault.haves(this.room), vault.posts(this.room)]);
+    if (this.destroyed) return;
+    forgot.forEach(id => this.forgot.add(id));
+    have.forEach((v, k) => this.localHave.set(k, v));
+    $$('#feed .msg').forEach(el => { if (this.forgot.has(el.dataset.id)) el.remove(); });
+    for (const p of posts) this.showPost(p);
+    this.updateEmpty();
+  }
+
+  /** Mostra um cartão do cofre: com o arquivo, se está aqui; sem ele, com o botão para pedir a quem tem. */
+  showPost(post) {
+    if (!post || this.forgot.has(post.id)) return;
+    this.posts.set(post.id, post);
+    const mine = post.from.deviceId === this.me.deviceId;
+    const n = post.items.length;
+    post.items.forEach((x, i) => {
+      if (!x?.fid) return;
+      const old = this.stored.get(x.fid);
+      if (old) {
+        if (!old.thumb && x.thumb) { old.thumb = x.thumb; old.media ||= x.media; this.markDirty(old); }
+        if (x.cloud) old.cloud = x.cloud;
+        return;
+      }
+      if (this.liveFids.has(x.fid)) return;
+      const m = {
+        kind: 'stored', id: `s-${x.fid}`, fid: x.fid, postId: post.id, ts: post.ts, name: x.name, size: x.size, type: x.type,
+        thumb: x.thumb, media: x.media, cloud: x.cloud || null, cloudFile: null, mine, from: post.from.name, fromPeer: post.from.peerId,
+        batch: n > 1 ? { id: post.id, i, n, items: post.items } : null, blob: null, tr: null, wanted: null, loading: this.localHave.has(x.fid)
+      };
+      this.stored.set(x.fid, m);
+      if (m.loading) {
+        vault.fileOf(x.fid).then(b => {
+          m.loading = false;
+          if (b) m.blob = b; else this.localHave.delete(x.fid);
+          this.markDirty(m);
+        });
+      }
+      this.markDirty(m);
+    });
+  }
+
+  storedInfo(m) {
+    const tr = m.tr && !['cancelled', 'failed'].includes(m.tr.state) ? m.tr : null;
+    const blob = m.blob || (tr?.state === 'done' ? tr.blob : null);
+    let state;
+    if (blob) state = 'done';
+    else if (tr) state = tr.state === 'stalled' ? 'stalled' : 'active';
+    else if (m.wanted) state = 'waiting';
+    else if (m.loading) state = 'loading';
+    else state = 'missing';
+    const full = blob ? this.objUrl(blob) : null;
+    return {
+      id: m.id, m, name: m.name, size: m.size, type: m.type, kind: kindOf(m.type, m.name), state, mine: m.mine, blob, remote: null, full,
+      preview: blob ? previewUrl(blob, m.type, m.name, () => this.touch(m)) : null, thumb: m.thumb || null, media: m.media || null,
+      progress: blob ? 1 : tr && m.size ? Math.min(1, tr.liveStats().raw / m.size) : 0,
+      comp: tr ? { raw: tr.done, wire: tr.wireDone, codec: tr.codec, final: state === 'done' } : null,
+      intact: tr ? tr.intact : !!this.localHave.get(m.fid)?.intact, label: ext(m.name), download: full, from: m.from, available: this.canFetch(m)
+    };
+  }
+
+  canFetch(m) {
+    return [...(this.peerHas.get(m.fid) || [])].some(p => this.peers.has(p)) || !!(m.cloudFile || (m.cloud && this.files.has(m.cloud)));
+  }
+
+  storedCardHTML(m, top, btn, forget) {
+    const it = this.storedInfo(m);
+    const who = m.mine ? esc(t('Enviado por você')) : t('De {name}', { name: `<b>${esc(m.from)}</b>` });
+    let body = '';
+    if (it.state === 'done') {
+      body = `<div class="acts"><a class="btn solid sm" href="${esc(it.full)}" download="${esc(m.name)}">${ICON.down}${esc(t('Salvar arquivo'))}</a>${btn('store', t('Guardar na sala'), 'quiet')}${forget}</div>`;
+    } else if (it.state === 'active' || it.state === 'stalled') {
+      body = `<div class="live">${this.liveHTML(this.cards.get(m.id)?.meter, m.tr.liveStats(), m.size, m.tr)}</div><div class="acts">${btn('cancel', t('Cancelar'), 'quiet')}</div>`;
+    } else if (it.state === 'waiting') {
+      const text = m.wanted === 'cloud' ? t('Baixando da nuvem') : t('Pedindo a {name}', { name: this.peers.get(m.wanted)?.name || '' });
+      body = `<div class="ok-note">${esc(text)}</div>${m.wanted === 'cloud' ? '' : `<div class="acts">${btn('cancel', t('Cancelar'), 'quiet')}</div>`}`;
+    } else if (it.state === 'missing') {
+      body = it.available
+        ? `<div class="acts">${btn('fetch', t('Baixar'), 'solid')}${forget}</div>`
+        : `<div class="ok-note">${esc(t('Não está neste aparelho, e nenhum aparelho com ele está na sala agora.'))}</div><div class="acts">${forget}</div>`;
+    }
+    return top(m.name, m.size, who, this.cardPath(m)) + body;
+  }
+
+  storedByCloud(fileId) {
+    for (const m of this.stored.values()) if (m.cloud === fileId) return m;
+    return null;
+  }
+
+  /** Abrir, salvar, compactar ou mandar para outro aparelho renova o prazo do arquivo neste aparelho. */
+  used(m) {
+    const fid = m?.fid || m?.tr?.fid;
+    if (fid && this.localHave.has(fid)) vault.touchFile(fid);
+  }
+
+  /** Guarda o que foi enviado: o cartão e uma cópia de cada arquivo, para continuar aqui e outros pedirem depois. */
+  async keepSent(post, files, fids, metas) {
+    files.forEach((f, i) => this.localFiles.set(fids[i], f));
+    const ms = await Promise.all(metas.map(p => Promise.resolve(p).catch(() => null)));
+    const saved = await vault.putPost({
+      ...post,
+      items: files.map((f, i) => ({ fid: fids[i], name: f.name, size: f.size, type: f.type || '', thumb: i < 12 ? ms[i]?.thumb || null : null, media: ms[i]?.media || null }))
+    });
+    if (saved) this.posts.set(saved.id, saved);
+    for (let i = 0; i < files.length; i++) {
+      if (this.destroyed || this.forgot.has(post.id)) return;
+      const f = files[i];
+      if (await vault.keepFile(fids[i], this.room, f, { name: f.name, type: f.type, size: f.size, intact: true })) {
+        this.localHave.set(fids[i], { intact: true });
+        this.announce('have', [fids[i]]);
+      }
+    }
+  }
+
+  /** Guarda o que chegou direto: o cartão (com o lote inteiro) e o arquivo, que já está no disco do navegador. */
+  async keepReceived(m, requested) {
+    const peer = this.peers.get(m.peerId);
+    const b = m.batch && m.batch.n > 1 ? m.batch : null;
+    const pid = m.post?.id || (b ? b.id : m.fid);
+    if (this.forgot.has(pid)) return;
+    if (!requested) {
+      const one = { fid: m.fid, name: m.name, size: m.size, type: m.type, thumb: m.thumb, media: m.media };
+      const items = b ? Array.from({ length: b.n }, (_, i) => ({ ...(b.items?.[i] || { name: '…' }), fid: b.fids?.[i] || null })) : [one];
+      if (b) items[b.i] = { ...items[b.i], ...one, thumb: items[b.i].thumb || m.thumb };
+      const saved = await vault.putPost({
+        id: pid, room: this.room, ts: m.post?.ts || m.startedAt,
+        from: { peerId: m.peerId, deviceId: peer?.deviceId || '', name: peer?.name || m.peerName || '' },
+        to: m.post?.priv ? [this.me.deviceId, peer?.deviceId].filter(Boolean) : null, items
+      });
+      if (saved) this.posts.set(saved.id, saved);
+    }
+    const ok = await vault.keepFile(m.fid, this.room, m.disk ? { disk: m.disk } : m.blob, { name: m.name, type: m.type, size: m.size, intact: m.intact });
+    if (ok) { this.localHave.set(m.fid, { intact: m.intact }); this.announce('have', [m.fid]); }
+  }
+
+  /** Chegou pela nuvem da sala: o cartão fica no cofre apontando para lá (o arquivo só vem quando baixar). */
+  async keepCloudPost(model, extra) {
+    const b = cleanBatch(extra.batch);
+    const pp = extra.post && /^[A-Za-z0-9_-]{1,32}$/.test(String(extra.post.id || '')) ? extra.post : null;
+    const multi = b && b.n > 1 ? b : null;
+    const pid = pp?.id || (multi ? multi.id : model.fid);
+    if (this.forgot.has(pid)) return;
+    const f = model.file;
+    const one = { fid: model.fid, cloud: f.id, name: f.name, size: f.size, type: f.type, thumb: model.thumb, media: model.media };
+    const items = multi ? Array.from({ length: multi.n }, (_, i) => ({ ...(multi.items?.[i] || { name: '…' }), fid: multi.fids?.[i] || null })) : [one];
+    if (multi) items[multi.i] = { ...items[multi.i], ...one };
+    const peer = this.peers.get(model.fromPeer);
+    const saved = await vault.putPost({
+      id: pid, room: this.room, ts: +pp?.ts || Date.now(), from: { peerId: model.fromPeer, deviceId: peer?.deviceId || '', name: model.from },
+      to: pp?.priv ? [this.me.deviceId, peer?.deviceId].filter(Boolean) : null, items
+    });
+    if (saved) this.posts.set(saved.id, saved);
+  }
+
+  /** Pede o arquivo de um cartão a um aparelho da sala que tem (de preferência com conexão direta). */
+  requestFile(fid, { quiet = false } = {}) {
+    const m = this.stored.get(fid);
+    if (!m || m.blob || m.wanted || (m.tr && !['cancelled', 'failed'].includes(m.tr.state))) return;
+    m.tr = null;
+    const rank = p => ({ direct: 0, relay: 1 })[this.mesh.path(p)] ?? 2;
+    const cands = [...(this.peerHas.get(fid) || [])].filter(p => this.peers.has(p) && this.mesh.isOpen(p)).sort((a, b) => rank(a) - rank(b));
+    if (!cands.length) {
+      const cf = m.cloudFile || (m.cloud && this.files.get(m.cloud));
+      if (cf) { this.fetchFromCloud(m, cf); return; }
+      if (!quiet) toast(t('Nenhum aparelho com este arquivo está na sala agora.'));
+      this.markDirty(m);
+      return;
+    }
+    const pid = cands[0];
+    m.wanted = pid;
+    this.mesh.send(pid, JSON.stringify({ x: 'want', fid }));
+    this.markDirty(m);
+    setTimeout(() => {
+      if (m.wanted !== pid || m.tr) return;
+      m.wanted = null;
+      this.markDirty(m);
+      if (!quiet) toast(t('{name} não respondeu. Tente de novo.', { name: this.peers.get(pid)?.name || '' }));
+    }, 20000);
+  }
+
+  async fetchFromCloud(m, f) {
+    m.wanted = 'cloud';
+    this.markDirty(m);
+    try {
+      const r = await fetch(downloadUrl(this.client, f.id));
+      if (!r.ok) throw new Error(`http ${r.status}`);
+      const blob = new Blob([await r.blob()], { type: m.type || '' });
+      m.blob = blob;
+      if (await vault.keepFile(m.fid, this.room, blob, { name: m.name, type: m.type, size: m.size })) {
+        this.localHave.set(m.fid, { intact: false });
+        this.announce('have', [m.fid]);
+      }
+    } catch (e) {
+      toast(t('Falhou: {why}', { why: e.message || '?' }));
+    }
+    m.wanted = null;
+    this.markDirty(m);
+  }
+
+  /** Mensagens do cofre pelo canal direto: cartões, quem tem o quê e pedidos de arquivo. */
+  onVaultMsg(pid, msg) {
+    if (!msg || typeof msg.x !== 'string') return;
+    const okId = f => /^[A-Za-z0-9_-]{1,32}$/.test(String(f || ''));
+    switch (msg.x) {
+      case 'posts': if (Array.isArray(msg.posts)) this.takePosts(pid, msg.posts); return;
+      case 'have': case 'drop': {
+        const fids = Array.isArray(msg.fids) ? msg.fids.filter(okId).slice(0, 5000) : [];
+        for (const f of fids) {
+          let set = this.peerHas.get(f);
+          if (msg.x === 'have') { if (!set) this.peerHas.set(f, set = new Set()); set.add(pid); } else set?.delete(pid);
+          const m = this.stored.get(f);
+          if (m) this.markDirty(m);
+        }
+        return;
+      }
+      case 'want': if (okId(msg.fid)) this.serve(pid, String(msg.fid)); return;
+      case 'nofile': {
+        if (!okId(msg.fid)) return;
+        const f = String(msg.fid);
+        this.peerHas.get(f)?.delete(pid);
+        const m = this.stored.get(f);
+        if (m && m.wanted === pid) { m.wanted = null; this.requestFile(f); }
+        return;
+      }
+      default:
+    }
+  }
+
+  async takePosts(pid, list) {
+    await this.vaultReady;
+    for (const raw of list.slice(0, 500)) {
+      if (this.destroyed) return;
+      const p = vault.cleanPost({ ...raw, room: this.room });
+      if (!p || this.forgot.has(p.id)) continue;
+      // Cartão mandado só para alguns aparelhos: fica só com eles.
+      if (p.to && !p.to.includes(this.me.deviceId)) continue;
+      // "Enviado por você" só vale para o que este aparelho já conhece.
+      if (p.from.deviceId === this.me.deviceId && !this.posts.has(p.id)) continue;
+      const saved = await vault.putPost(p);
+      if (saved && !this.destroyed) this.showPost(saved);
+    }
+    this.updateEmpty();
+  }
+
+  /** Quem pode ver o cartão deste arquivo: todos, ou só os aparelhos para quem foi mandado. */
+  shareable(fid, deviceId) {
+    for (const p of this.posts.values()) {
+      if (!p.items.some(x => x?.fid === fid)) continue;
+      if (this.forgot.has(p.id)) return false;
+      return !p.to || p.to.includes(deviceId) || p.from.deviceId === deviceId;
+    }
+    return false;
+  }
+
+  /** Conexão direta abriu: conta os cartões e os arquivos que este aparelho tem (quem entrou depois vê a conversa toda). */
+  async syncTo(pid) {
+    await this.vaultReady;
+    if (this.destroyed || !this.mesh.isOpen(pid)) return;
+    const dev = this.peers.get(pid)?.deviceId;
+    const list = [...this.posts.values()].filter(p => !this.forgot.has(p.id) && (!p.to || p.to.includes(dev) || p.from.deviceId === dev));
+    let chunk = [], size = 0;
+    const flush = () => { if (chunk.length) this.mesh.send(pid, JSON.stringify({ x: 'posts', posts: chunk })); chunk = []; size = 0; };
+    for (const p of list) {
+      const n = JSON.stringify(p).length;
+      if (n > 180000) continue;
+      if (size + n > 180000) flush();
+      chunk.push(p);
+      size += n;
+    }
+    flush();
+    const fids = [...new Set([...this.localHave.keys(), ...this.localFiles.keys()])].filter(f => this.shareable(f, dev));
+    if (fids.length) this.mesh.send(pid, JSON.stringify({ x: 'have', fids }));
+  }
+
+  announce(kind, fids) {
+    if (!fids.length) return;
+    for (const [pid, p] of this.peers) {
+      if (!this.mesh.isOpen(pid)) continue;
+      const list = kind === 'drop' ? fids : fids.filter(f => this.shareable(f, p.deviceId));
+      if (list.length) this.mesh.send(pid, JSON.stringify({ x: kind, fids: list }));
+    }
+  }
+
+  peerGone(pid) {
+    for (const [f, set] of this.peerHas) {
+      if (!set.delete(pid)) continue;
+      const m = this.stored.get(f);
+      if (m) this.markDirty(m);
+    }
+    for (const m of this.stored.values()) if (m.wanted === pid) { m.wanted = null; this.markDirty(m); }
+  }
+
+  /** Outro aparelho pediu um arquivo de um cartão: manda direto, sem criar cartão novo aqui. */
+  async serve(pid, fid) {
+    const peer = this.peers.get(pid);
+    const post = [...this.posts.values()].find(p => p.items.some(x => x?.fid === fid));
+    const item = post?.items.find(x => x?.fid === fid);
+    const busy = [...this.transfers.out.values()].some(x => x.serve && x.fid === fid && x.peerId === pid && !['done', 'failed', 'cancelled'].includes(x.state));
+    if (busy) return;
+    const ok = post && peer && this.shareable(fid, peer.deviceId);
+    let blob = ok ? this.localFiles.get(fid) || null : null;
+    if (ok && !blob) blob = await vault.fileOf(fid, { touch: true });
+    else if (blob) vault.touchFile(fid);
+    if (!blob || this.destroyed) { this.mesh.send(pid, JSON.stringify({ x: 'nofile', fid })); return; }
+    const file = new File([blob], item.name, { type: item.type || blob.type || '' });
+    this.transfers.send(file, pid, {
+      peerName: peer.name, fid, serve: true, post: { id: post.id, ts: post.ts, priv: !!post.to },
+      meta: Promise.resolve({ thumb: item.thumb || null, media: item.media || null, batch: null })
+    });
+  }
+
+  /** Esquecer neste aparelho: some da conversa, os arquivos são apagados daqui e não voltam por outros aparelhos. */
+  async forgetEl(el) {
+    if (!el) return;
+    let ids = [], fids = [];
+    const busy = () => toast(t('Espere terminar ou cancele antes de remover.'));
+    if (el.matches('.msg')) ids = [el.dataset.id];
+    else if (el.dataset.card) {
+      const id = el.dataset.card;
+      const m = this.cards.get(id)?.model;
+      if (!m) return;
+      if (['active', 'waiting', 'queued'].includes(this.itemInfo(m).state)) { busy(); return; }
+      const fid = m.fid || null;
+      ids = [m.kind === 'stored' ? m.postId : m.post?.id || (m.batch?.n > 1 ? m.batch.id : fid)].filter(Boolean);
+      fids = [fid].filter(Boolean);
+      this.cards.delete(id);
+    } else if (el.dataset.album) {
+      const a = this.albums.get(el.dataset.album);
+      if (!a) return;
+      const items = this.albumItems(a);
+      if (items.some(x => ['active', 'waiting'].includes(x.state) && !x.placeholder)) { busy(); return; }
+      const ms = items.map(x => x.m).filter(Boolean);
+      const first = ms[0];
+      const pid = first?.kind === 'stored' ? first.postId : first?.post?.id || first?.batch?.id;
+      ids = [pid].filter(Boolean);
+      fids = ms.map(m => m.fid).filter(Boolean);
+      const post = this.posts.get(pid);
+      if (post) fids.push(...post.items.map(x => x?.fid).filter(Boolean));
+      this.albums.delete(a.key);
+      ms.forEach(m => this.albumOf.delete(m.id));
+    } else return;
+    fids = [...new Set(fids)];
+    ids.forEach(id => { this.forgot.add(id); this.posts.delete(id); });
+    fids.forEach(f => { this.stored.delete(f); this.localFiles.delete(f); this.localHave.delete(f); });
+    el.remove();
+    this.updateEmpty();
+    await vault.forget(this.room, ids, fids);
+    this.announce('drop', fids);
+    toast(t('Removido deste aparelho'));
+  }
+
+  /** "Apagar tudo" da sala: some também tudo o que este aparelho guardava dela. */
+  wipeLocal() {
+    vault.forgetRoom(this.room);
+    for (const m of this.stored.values()) { this.cards.get(m.id)?.el.remove(); this.cards.delete(m.id); }
+    for (const [k, a] of this.albums) if (a.stored) { a.el.remove(); this.albums.delete(k); }
+    this.announce('drop', [...this.localHave.keys()]);
+    this.stored.clear(); this.posts.clear(); this.localHave.clear(); this.localFiles.clear(); this.forgot.clear();
   }
 
   // ----- QR, uso, configurações -----
@@ -1870,5 +2312,9 @@ class RoomView {
   }
 }
 
-cleanupOld();
+// Limpeza do cofre e das sobras de recebimentos: na abertura e de hora em hora.
+const sweep = () => vault.sweep().then(keep => cleanupOld(keep)).catch(() => {});
+sweep();
+setInterval(sweep, 3600 * 1000);
+if (['localhost', '127.0.0.1'].includes(location.hostname)) window.__vault = vault;
 route();
