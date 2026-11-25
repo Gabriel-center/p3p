@@ -6,11 +6,11 @@
 // - Computador: ⌘K / Ctrl+K abre a busca de comandos, "/" vai para o campo de mensagem, arrastar
 //   arquivos sobre um aparelho manda só para ele, anel de progresso no avatar de quem está recebendo.
 // - App: instalar na tela inicial, receber arquivos pelo "Compartilhar" do celular, ler o QR com a câmera.
-import { t, bytes } from './i18n.js?v=202611240439';
-import { normalizeRoom, roomFromLocation } from './device.js?v=202611240439';
-import * as hist from './history.js?v=202611240439';
-import { spring, reduced, tick } from './motion.js?v=202611240439';
-import { glass, refracts } from './glass.js?v=202611240439';
+import { t, bytes } from './i18n.js?v=202611251757';
+import { normalizeRoom, roomFromLocation } from './device.js?v=202611251757';
+import * as hist from './history.js?v=202611251757';
+import { spring, reduced, tick } from './motion.js?v=202611251757';
+import { glass, refracts } from './glass.js?v=202611251757';
 
 let api = null;
 const $ = (s, el = document) => el.querySelector(s);

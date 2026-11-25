@@ -1,7 +1,7 @@
 // Conexões diretas (WebRTC) entre todos os aparelhos da sala.
 // Para cada par, o aparelho com o menor id inicia. A sinalização passa pelo servidor da sala.
-import { WORKER_URL, CONNECT_TIMEOUT_MS } from './config.js?v=202611240439';
-import { randomId } from './device.js?v=202611240439';
+import { WORKER_URL, CONNECT_TIMEOUT_MS } from './config.js?v=202611251757';
+import { randomId } from './device.js?v=202611251757';
 
 const HEARTBEAT_MS = 5000;
 const DEAD_MS = 16000;

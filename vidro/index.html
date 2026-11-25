@@ -17,17 +17,20 @@
   <script>
     // Tema escolhido (claro/escuro) antes de pintar a página, para não piscar.
     try { var th = localStorage.getItem('p2p.theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}
+    // App instalado no Android: o Chrome pinta a barra de navegação do sistema com a cor do manifesto, que só
+    // tem uma cor. Por isso há um manifesto claro e um escuro, escolhido pelo tema na hora de instalar.
+    try { var dk = th === 'dark' || (th !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches); document.querySelector('link[rel="manifest"]').href = dk ? 'manifest-dark.webmanifest' : 'manifest.webmanifest'; } catch (e) {}
   </script>
-  <link rel="stylesheet" href="../assets/app.css?v=202611240439">
-  <link rel="stylesheet" href="../assets/vidro.css?v=202611240439">
-  <link rel="stylesheet" href="../assets/vidro-next.css?v=202611240439">
-  <link rel="modulepreload" href="../assets/app.js?v=202611240439">
+  <link rel="stylesheet" href="../assets/app.css?v=202611251757">
+  <link rel="stylesheet" href="../assets/vidro.css?v=202611251757">
+  <link rel="stylesheet" href="../assets/vidro-next.css?v=202611251757">
+  <link rel="modulepreload" href="../assets/app.js?v=202611251757">
 </head>
 <body>
   <div id="app"></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <noscript><p style="padding:24px">Este site precisa de JavaScript para funcionar.</p></noscript>
   <script src="../assets/vendor/qrcode/qrcode.js"></script>
-  <script type="module" src="../assets/app.js?v=202611240439"></script>
+  <script type="module" src="../assets/app.js?v=202611251757"></script>
 </body>
 </html>

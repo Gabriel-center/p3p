@@ -583,10 +583,11 @@ dialog.viewer::backdrop { background: #05080f; backdrop-filter: none; }
 .vw-btn:hover { background: rgba(255, 255, 255, 0.12); }
 .vw-btn svg.i { width: 20px; height: 20px; }
 .vw-stage { position: relative; display: grid; place-items: center; min-height: 0; padding: 4px 64px; touch-action: pan-y; }
-.vw-media { width: 100%; height: 100%; display: grid; place-items: center; min-height: 0; overflow: hidden; }
-.vw-media > img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.vw-media { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
+/* flex (não grid): em grid a altura máxima em % da imagem não tem referência e uma foto alta passava da tela */
+.vw-media > img { max-width: 100%; max-height: 100%; min-width: 0; min-height: 0; object-fit: contain; display: block; }
 .vw-media > video { width: 100%; height: 100%; max-height: 100%; object-fit: contain; display: block; background: #000; }
-.vw-wait { position: relative; width: min(620px, 100%); aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; display: grid; place-items: center; }
+.vw-wait { position: relative; width: min(620px, 100%); max-height: 100%; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; display: grid; place-items: center; }
 .vw-wait img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .vw-wait img.blur { filter: blur(16px); transform: scale(1.1); }
 .vw-status { position: relative; background: rgba(5, 8, 15, 0.72); padding: 8px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }

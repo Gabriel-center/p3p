@@ -1,5 +1,5 @@
 // Ligação com o servidor da sala: reconecta sozinho, lida com senha e guarda mensagens na fila.
-import { WS_URL, WORKER_URL } from './config.js?v=202611240439';
+import { WS_URL, WORKER_URL } from './config.js?v=202611251757';
 
 const PING_MS = 20000;
 const DEAD_MS = 50000;
