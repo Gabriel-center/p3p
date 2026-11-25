@@ -1,4 +1,4 @@
-// Teste da versão "vidro" de teste (/vidro/, data-next) com navegadores de verdade.
+// Teste do movimento, gestos, app instalável, ⌘K e leitor de QR (assets/next.js) com navegadores de verdade.
 // Precisa do servidor local (npm run dev) e do site em http://127.0.0.1:8788 (python3 -m http.server 8788).
 // Uso: CHROME=/caminho/do/chrome node test/vidro.e2e.cjs <pasta com puppeteer-core> <pasta de saída> [vídeo .y4m com um QR de sala]
 //   O .y4m (ffmpeg -loop 1 -i qr.png -t 2 -pix_fmt yuv420p qr.y4m) vira a "câmera" do leitor de QR (opcional: sem ele, o passo do leitor é pulado).
@@ -8,7 +8,7 @@ const MODS = process.argv[2];
 const OUT = process.argv[3] || '/tmp';
 const QR_VIDEO = process.argv[4] || '';
 const puppeteer = require(path.join(MODS, 'puppeteer-core'));
-const SITE = 'http://127.0.0.1:8788/vidro/';
+const SITE = 'http://127.0.0.1:8788/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const room = `vt-${Math.random().toString(36).slice(2, 7)}`;
 const PHONE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };

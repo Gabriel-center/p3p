@@ -8,7 +8,7 @@
 // Nada daqui vai para o servidor. Limpeza: o arquivo sai depois de IDLE_MS sem ninguém abrir, salvar ou
 // pedir; a sala inteira (cartões, arquivos e esquecidos) sai depois de IDLE_MS sem este aparelho entrar,
 // como o servidor faz com as mensagens da sala.
-import { KEY } from './config.js?v=202611251832';
+import { KEY } from './config.js?v=202611251905';
 
 export const IDLE_MS = 48 * 3600 * 1000;
 const DB = `${KEY}-vault`;

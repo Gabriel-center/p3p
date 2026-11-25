@@ -133,6 +133,7 @@ async function waitFor(page, fn, arg, timeout = 30000) {
     const big = await A.$eval('#qr-box svg', e => Math.round(e.getBoundingClientRect().width));
     await A.screenshot({ path: path.join(OUT, 'e2e-qr-aberto.png') });
     await A.keyboard.press('Escape');
+    await waitFor(A, () => !document.querySelector('dialog[open]'));   // folhas saem com animação
     if (big < 360) throw new Error('QR do convite pequeno: ' + big);
     return `lateral ${side} px, na conversa ${center} px, aberto ${big} px`;
   });
@@ -216,6 +217,7 @@ async function waitFor(page, fn, arg, timeout = 30000) {
       played = `vídeo tocou até ${at.toFixed(1)} s`;
     }
     await B.keyboard.press('Escape');
+    await waitFor(B, () => !document.querySelector('dialog[open]'));   // a foto volta para o cartão antes de fechar
     // Baixar tudo em .zip
     await B.click(`${album} [data-act="zip"]`);
     await waitFor(B, () => !!window.__p2p.lastZip, null, 60000);
@@ -321,6 +323,7 @@ async function waitFor(page, fn, arg, timeout = 30000) {
     await waitFor(D, () => document.querySelector('#gate').hidden && window.__p2p.peers.size === 3);
     await D.close();
     await A.keyboard.press('Escape');
+    await waitFor(A, () => !document.querySelector('dialog[open]'));
   });
 
   await step('painel de uso mostra porcentagem e reset', async () => {
@@ -331,6 +334,7 @@ async function waitFor(page, fn, arg, timeout = 30000) {
 
   await step('apagar tudo exige senha de admin', async () => {
     await A.click('#settings');
+    await sleep(500);   // a folha entra com animação
     await A.type('#admin-pw', 'chute');
     await A.click('#wipe-form .btn.danger');
     await waitFor(A, () => !document.querySelector('#wipe-err').hidden);

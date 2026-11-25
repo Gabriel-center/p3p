@@ -1,4 +1,4 @@
-// Movimento com mola: o mesmo jeito de acelerar e assentar em tudo o que se mexe na versão de teste.
+// Movimento com mola: o mesmo jeito de acelerar e assentar em tudo o que se mexe no site.
 // spring() devolve { easing, duration } para usar com element.animate(). Onde o navegador não entende
 // linear(), cai numa curva parecida.
 const LINEAR_OK = typeof CSS !== 'undefined' && CSS.supports?.('animation-timing-function', 'linear(0, 1)');

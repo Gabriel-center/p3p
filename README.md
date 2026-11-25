@@ -28,24 +28,24 @@ https://gabriel-center.github.io/p3p/?sala01
 - **Conversa guardada no aparelho** (`assets/vault.js`): fotos, vídeos e arquivos que passaram pela conversa continuam lá depois de recarregar, para quem enviou e para quem recebeu. O arquivo fica no disco do navegador (OPFS; onde não há, no IndexedDB) e nunca vai para o servidor.
   - **Quem entra depois** vê os cartões (nome, tamanho, miniatura desfocada) assim que abre conexão direta com alguém que estava lá. Tocar baixa o arquivo de um aparelho da sala que tem a cópia, como no WhatsApp; "Baixar os N que faltam" pega o resto do lote. Sem ninguém com o arquivo na sala, o cartão avisa. Se o arquivo também foi pela nuvem da sala, baixa de lá.
   - **Só para alguns:** o que foi mandado só para um aparelho fica só com ele e com quem mandou.
-  - **Remover deste aparelho** (toque longo ou botão direito na versão de teste; botão no cartão e lixeira ao lado de "copiar" na principal): apaga a mensagem ou o cartão e os arquivos daqui, e não volta quando outros aparelhos sincronizam.
+  - **Remover deste aparelho** (toque longo ou botão direito na mensagem ou no cartão): apaga a mensagem ou o cartão e os arquivos daqui, e não volta quando outros aparelhos sincronizam.
   - **Limpeza:** cada arquivo sai do aparelho depois de 48 h sem ser aberto, salvo, compactado ou pedido por outro aparelho (o cartão fica, e dá para pedir de novo a quem ainda tem). Se este aparelho passa 48 h sem entrar na sala, tudo dela some daqui, como o servidor faz com as mensagens de uma sala parada. "Apagar tudo" apaga também o que cada aparelho guardava.
 - **Interface:** tema claro, escuro ou automático (escolha em Configurações, salva no aparelho). Fontes Red Hat servidas pelo próprio site.
 
-## Visual e versão de teste
+## Visual, movimento e app
 
-O site principal (`/p3p/`) usa o visual "vidro": material translúcido sobre o conteúdo, cápsulas, cantos concêntricos, cores e fonte do sistema (San Francisco nos aparelhos que a têm, Inter nos outros). No celular, barra de navegação e barra de abas flutuantes, com o campo de envio logo acima; no computador, barra lateral e inspetor flutuando.
+O site usa o visual "vidro": material translúcido sobre o conteúdo, cápsulas, cantos concêntricos, cores e fonte do sistema (San Francisco nos aparelhos que a têm, Inter nos outros). No celular, barra de navegação e barra de abas flutuantes, com o campo de envio logo acima; no computador, barra lateral e inspetor flutuando.
 
 - Estilo: `assets/vidro.css`, carregado depois de `assets/app.css`. Todas as regras começam com `html[data-skin="vidro"]` (o `index.html` tem `data-skin="vidro"`).
 - O `app.js` só troca ícones, a marca e pequenos trechos de HTML quando a página tem `data-skin="vidro"`.
 
-`vidro/index.html` (no ar em `/p3p/vidro/`) é a versão de teste: o mesmo site, mais `data-next`, que carrega `assets/next.js` e `assets/vidro-next.css`. Usa o mesmo servidor e as mesmas salas: abrir `?sala` nas duas versões coloca as duas na mesma sala.
+O `index.html` também tem `data-next`, que carrega `assets/next.js` e `assets/vidro-next.css`: vidro líquido, movimento, gestos, app instalável, atalhos e leitor de QR. O antigo endereço de teste, `/p3p/vidro/`, só leva para o site principal com a mesma sala (o service worker antigo de lá se desfaz sozinho).
 
 - **Vidro líquido:** abas, botões redondos, campo de mensagem e barra de endereço são lentes: o que passa por baixo entorta perto da borda. `assets/glass.js` calcula, para cada tamanho de controle, um mapa de deslocamento (perfil de borda "squircle" e lei de Snell com vidro n = 1,5), guarda e usa num filtro SVG `feDisplacementMap` dentro do `backdrop-filter`. Nada roda por quadro: o mapa só é refeito quando o controle muda de tamanho. Só Chrome, Edge e Android refratam; Safari e Firefox ficam com o vidro fosco feito em CSS.
 - **Movimento:** a marca da aba selecionada desliza com mola (e dá para arrastar o dedo pela barra), mensagens entram vindo de onde saíram, botões de vidro crescem e acendem sob o dedo, folhas e janelas saem com animação, a seleção do controle segmentado desliza, troca de tela e de tema dissolvem (View Transitions), o botão de enviar só aparece com texto.
 - **Gestos:** deslizar a conversa para a esquerda mostra os horários; toque longo (ou botão direito) numa mensagem abre um menu; folhas fecham arrastando para baixo; no visualizador a foto cresce a partir do cartão e volta para ele, arrastar para baixo fecha, deslizar acompanha o dedo, pinça e dois toques dão zoom, um toque esconde as barras (`assets/viewer.js`, `assets/motion.js`).
 - **Computador:** ⌘K / Ctrl+K abre a busca de comandos (também entra em salas pelo nome), `/` vai para o campo de mensagem, arrastar arquivos sobre um aparelho da lista manda só para ele, anel de progresso no avatar de quem está mandando ou recebendo.
-- **App:** instalável (`vidro/manifest.webmanifest`, `vidro/sw.js`, ícones em `vidro/icons/`). No Android aparece no "Compartilhar" de outros apps: o service worker guarda os arquivos e a página pergunta para qual sala mandar. No iPhone o botão "Instalar" explica o caminho pelo Compartilhar do Safari (o iOS não deixa sites receberem arquivos pelo Compartilhar). O service worker também abre o site sem internet.
+- **App:** instalável (`manifest.webmanifest` e `manifest-dark.webmanifest`, escolhido pelo tema para a barra de baixo do Android ter a cor certa; `sw.js`; ícones em `icons/`). No Android aparece no "Compartilhar" de outros apps: o service worker guarda os arquivos e a página pergunta para qual sala mandar. No iPhone o botão "Instalar" explica o caminho pelo Compartilhar do Safari (o iOS não deixa sites receberem arquivos pelo Compartilhar). O service worker também abre o site sem internet.
 - **Leitor de QR:** "Ler QR code" no início (e na busca de comandos) usa a câmera; lê com o `BarcodeDetector` do navegador ou, onde não há, com o jsQR (`assets/vendor/jsqr`, carregado só quando precisa).
 - Fonte Inter (OFL): `assets/fonts/inter-*.woff2`, licença em `assets/fonts/LICENSE-inter.txt`.
 
@@ -95,8 +95,8 @@ node test/zip.test.mjs                           # .zip do navegador conferido p
 node test/adaptive.test.mjs                      # ajuste automático do nível de compressão
 node test/e2e.cjs <node_modules com puppeteer-core e @sparticuz/chromium> <pasta>
 CHROME=/usr/bin/google-chrome node test/e2e.cjs <node_modules com puppeteer-core> <pasta>   # com o Chrome instalado
-CHROME=/usr/bin/google-chrome node test/vidro.e2e.cjs <node_modules com puppeteer-core> <pasta> [qr.y4m]   # versão de teste: gestos, ⌘K, compartilhar, leitor de QR
-CHROME=/usr/bin/google-chrome node test/vault.e2e.cjs <node_modules com puppeteer-core> [./ ou vidro/]   # conversa guardada: recarregar, quem entra depois, remover e limpeza
+CHROME=/usr/bin/google-chrome node test/next.e2e.cjs <node_modules com puppeteer-core> <pasta> [qr.y4m]    # gestos, ⌘K, compartilhar, leitor de QR
+CHROME=/usr/bin/google-chrome node test/vault.e2e.cjs <node_modules com puppeteer-core>   # conversa guardada: recarregar, quem entra depois, remover e limpeza
 ```
 
 O teste ponta a ponta abre três navegadores e cobre:

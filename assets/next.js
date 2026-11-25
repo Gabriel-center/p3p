@@ -1,4 +1,4 @@
-// Versão de teste (vidro/index.html, data-next): o que vai além do visual.
+// Movimento, gestos, app instalável, atalhos e leitor de QR (data-next no index.html): o que vai além do visual.
 // - Movimento: barra de abas com a marca que desliza (e dá para arrastar o dedo por ela), mensagens e
 //   cartões entrando com mola, painéis trocando com transição, brilho do vidro seguindo o dedo/mouse.
 // - Gestos: deslizar a conversa para a esquerda mostra os horários, toque longo (ou botão direito) numa
@@ -6,11 +6,11 @@
 // - Computador: ⌘K / Ctrl+K abre a busca de comandos, "/" vai para o campo de mensagem, arrastar
 //   arquivos sobre um aparelho manda só para ele, anel de progresso no avatar de quem está recebendo.
 // - App: instalar na tela inicial, receber arquivos pelo "Compartilhar" do celular, ler o QR com a câmera.
-import { t, bytes } from './i18n.js?v=202611251832';
-import { normalizeRoom, roomFromLocation } from './device.js?v=202611251832';
-import * as hist from './history.js?v=202611251832';
-import { spring, reduced, tick } from './motion.js?v=202611251832';
-import { glass, refracts } from './glass.js?v=202611251832';
+import { t, bytes } from './i18n.js?v=202611251905';
+import { normalizeRoom, roomFromLocation } from './device.js?v=202611251905';
+import * as hist from './history.js?v=202611251905';
+import { spring, reduced, tick } from './motion.js?v=202611251905';
+import { glass, refracts } from './glass.js?v=202611251905';
 
 let api = null;
 const $ = (s, el = document) => el.querySelector(s);

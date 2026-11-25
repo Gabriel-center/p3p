@@ -1,12 +1,12 @@
 // Cofre (assets/vault.js): a conversa continua no aparelho depois de recarregar, quem entra depois vê os
 // cartões e pede os arquivos a quem tem, "Remover deste aparelho" e a limpeza depois de 48 h.
-// Uso: CHROME=/usr/bin/google-chrome node test/vault.e2e.cjs <node_modules com puppeteer-core> [./ ou vidro/] [pasta com as fotos]
+// Uso: CHROME=/usr/bin/google-chrome node test/vault.e2e.cjs <node_modules com puppeteer-core> [pasta com as fotos]
 // Precisa do servidor local (npm run dev) e do site em http://127.0.0.1:8788.
 const puppeteer = require(require('path').join(process.argv[2] || '/tmp/mods/node_modules', 'puppeteer-core'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const site = process.argv[3] || './';
+const site = './';
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
-const L = (process.argv[4] || '/tmp/e2e/lote') + '/';   // fotos de teste: o test/e2e.cjs cria em /tmp/e2e/lote
+const L = (process.argv[3] || '/tmp/e2e/lote') + '/';   // fotos de teste: o test/e2e.cjs cria em /tmp/e2e/lote
 (async () => {
   const b = await puppeteer.launch({ executablePath: CHROME, args: ['--no-sandbox'], headless: true });
   const room = 'vt-' + Date.now().toString(36);

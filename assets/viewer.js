@@ -1,9 +1,9 @@
 // Visualizador em tela cheia: fotos, vídeos (com play) e áudios. Setas, teclado (← →), deslizar no celular
 // e faixa de miniaturas quando é um lote. Quem chama passa resolve(id) → como mostrar aquele item agora.
 //   item = { id, name, kind, src, poster, blur, status, href, download, meta, label }
-// Com fancy (versão de teste): a foto cresce a partir do cartão e volta para ele, arrastar para baixo fecha,
+// Com fancy: a foto cresce a partir do cartão e volta para ele, arrastar para baixo fecha,
 // deslizar acompanha o dedo, pinça e dois toques dão zoom, um toque esconde as barras.
-import { spring, reduced, tick } from './motion.js?v=202611251832';
+import { spring, reduced, tick } from './motion.js?v=202611251905';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -142,7 +142,7 @@ export class Viewer {
     s.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   }
 
-  // ---------- versão de teste: movimento ----------
+  // ---------- movimento ----------
   media() { return this.$('.vw-media').firstElementChild; }
 
   /** Cartão de onde a foto atual saiu (se ainda estiver na tela). */

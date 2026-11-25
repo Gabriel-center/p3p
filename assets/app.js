@@ -1,18 +1,18 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611251832';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611251832';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611251832';
-import { RoomClient } from './room-client.js?v=202611251832';
-import { Mesh } from './mesh.js?v=202611251832';
-import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611251832';
-import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611251832';
-import { makeZip } from './zip.js?v=202611251832';
-import { Viewer } from './viewer.js?v=202611251832';
-import { CloudUpload, downloadUrl } from './cloud.js?v=202611251832';
-import { cleanupOld } from './storage.js?v=202611251832';
-import { SpeedMeter } from './speed.js?v=202611251832';
-import * as hist from './history.js?v=202611251832';
-import * as vault from './vault.js?v=202611251832';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611251905';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611251905';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611251905';
+import { RoomClient } from './room-client.js?v=202611251905';
+import { Mesh } from './mesh.js?v=202611251905';
+import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611251905';
+import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611251905';
+import { makeZip } from './zip.js?v=202611251905';
+import { Viewer } from './viewer.js?v=202611251905';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611251905';
+import { cleanupOld } from './storage.js?v=202611251905';
+import { SpeedMeter } from './speed.js?v=202611251905';
+import * as hist from './history.js?v=202611251905';
+import * as vault from './vault.js?v=202611251905';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
@@ -61,14 +61,13 @@ const ICON = {
   expand: svg('<path d="M4 9.5V4h5.5M20 9.5V4h-5.5M4 14.5V20h5.5M20 14.5V20h-5.5"/>'),
   stack: svg('<rect x="3.5" y="7.5" width="13" height="13" rx="2"/><path d="M7.5 4h11A2.5 2.5 0 0 1 21 6.5v11"/>')
 };
-// Versão "vidro" (vidro/index.html, data-skin="vidro"): mesma sala e mesmo código, outra identidade visual.
-// Só troca ícones, a marca e pequenos trechos de HTML; o resto é assets/vidro.css.
+// Visual "vidro" (data-skin="vidro" no index.html): troca ícones, a marca e pequenos trechos de HTML; o resto é assets/vidro.css.
 const SKIN = document.documentElement.dataset.skin || '';
 const VIDRO = SKIN === 'vidro';
-// Versão de teste (vidro/index.html, data-next): movimento, gestos, app instalável, atalhos e leitor de QR.
+// data-next no index.html: movimento, gestos, app instalável, atalhos e leitor de QR (assets/next.js).
 // Tudo isso mora em next.js e só é carregado nessa página.
 const NEXT = 'next' in document.documentElement.dataset;
-const nextMod = NEXT ? import('./next.js?v=202611251832') : null;
+const nextMod = NEXT ? import('./next.js?v=202611251905') : null;
 if (VIDRO) Object.assign(ICON, {
   send: svg('<path d="M12 18.5V6M6.5 11.5L12 6l5.5 5.5"/>'),
   clip: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
@@ -144,7 +143,7 @@ document.addEventListener('click', e => {
 function setTheme(th) {
   save('p2p.theme', th === 'auto' ? null : th);
   const run = () => { applyTheme(th); $$('[data-theme-toggle]').forEach(x => { x.outerHTML = themeButton(); }); };
-  // Versão de teste: o tema troca com uma transição suave da página inteira.
+  // O tema troca com uma transição suave da página inteira.
   if (smoothSwap()) document.startViewTransition(run); else run();
 }
 function smoothSwap() {
@@ -194,7 +193,7 @@ document.addEventListener('click', e => {
   navigate(a.getAttribute('href'));
 });
 
-// Funções do app que a versão de teste usa.
+// Funções do app que o next.js usa.
 const nextReady = nextMod?.then(m => {
   m.init({ navigate, toast, copy, ICON, esc, shareUrl, setTheme, getTheme, APPICON, avatar, current: () => current });
   return m;
@@ -604,7 +603,7 @@ class RoomView {
       const files = [...e.dataTransfer.files];
       const toShelf = !!e.target.closest?.('#shelf-drop');
       $('#shelf-drop')?.classList.remove('hot');
-      // Versão de teste: soltar sobre um aparelho da lista manda só para ele.
+      // Soltar sobre um aparelho da lista manda só para ele.
       const row = NEXT ? e.target.closest?.('.device[data-peer]:not([data-self])') : null;
       if (row && this.peers.has(row.dataset.peer)) {
         const prev = this.target;
