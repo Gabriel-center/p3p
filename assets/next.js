@@ -6,11 +6,11 @@
 // - Computador: ⌘K / Ctrl+K abre a busca de comandos, "/" vai para o campo de mensagem, arrastar
 //   arquivos sobre um aparelho manda só para ele, anel de progresso no avatar de quem está recebendo.
 // - App: instalar na tela inicial, receber arquivos pelo "Compartilhar" do celular, ler o QR com a câmera.
-import { t, bytes } from './i18n.js?v=202611251905';
-import { normalizeRoom, roomFromLocation } from './device.js?v=202611251905';
-import * as hist from './history.js?v=202611251905';
-import { spring, reduced, tick } from './motion.js?v=202611251905';
-import { glass, refracts } from './glass.js?v=202611251905';
+import { t, bytes } from './i18n.js?v=202611252051';
+import { normalizeRoom, roomFromLocation } from './device.js?v=202611252051';
+import * as hist from './history.js?v=202611252051';
+import { spring, reduced, tick } from './motion.js?v=202611252051';
+import { glass, refracts } from './glass.js?v=202611252051';
 
 let api = null;
 const $ = (s, el = document) => el.querySelector(s);
@@ -26,6 +26,7 @@ export function init(a) {
   api = a;
   // Vidro líquido com refração onde o navegador deixa (Chrome, Edge, Android).
   document.documentElement.classList.toggle('lg-on', refracts);
+  scrollbars();
 
   // App instalável
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
@@ -38,6 +39,28 @@ export function init(a) {
   keyboard();
   dialogMotion();
   segmented();
+}
+
+/**
+ * Barras de rolagem do sistema: onde ocupam espaço (barras clássicas), o CSS as troca por um fio que só
+ * aparece enquanto rola. A classe .scrolling fica no elemento que rolou até ele parar.
+ */
+function scrollbars() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;top:-999px;width:60px;height:60px;overflow:scroll;scrollbar-width:auto';
+  document.body.append(probe);
+  const classic = probe.offsetWidth - probe.clientWidth > 0;
+  probe.remove();
+  document.documentElement.classList.toggle('sb-classic', classic);
+  if (!classic) return;
+  const timers = new WeakMap();
+  addEventListener('scroll', e => {
+    const el = e.target === document ? document.scrollingElement : e.target;
+    if (!el?.classList) return;
+    if (!el.classList.contains('scrolling')) el.classList.add('scrolling');
+    clearTimeout(timers.get(el));
+    timers.set(el, setTimeout(() => el.classList.remove('scrolling'), 1000));
+  }, { capture: true, passive: true });
 }
 
 /** Folhas e janelas também saem com animação (entrar já é com CSS): Esc, "Fechar", botões do formulário. */

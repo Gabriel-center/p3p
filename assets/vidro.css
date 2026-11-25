@@ -122,7 +122,24 @@ html[data-skin="vidro"] .recents li:only-child a { border-radius: var(--r-l); }
 html[data-skin="vidro"] .field input:focus, html[data-skin="vidro"] .field-row input:focus, html[data-skin="vidro"] .gate-card input:focus, html[data-skin="vidro"] .filters input:focus, html[data-skin="vidro"] .filters select:focus { box-shadow: 0 0 0 3px var(--accent-tint); }
 html[data-skin="vidro"] svg.i { stroke-width: 1.9; }
 html[data-skin="vidro"] .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-html[data-skin="vidro"] * { scrollbar-width: thin; scrollbar-color: var(--rule-2) transparent; }
+/* Barras de rolagem como no sistema: um fio arredondado que flutua por dentro, longe das bordas e dos
+   cantos arredondados, e só aparece enquanto rola (ou com o ponteiro em cima dela, onde engrossa).
+   Só onde o sistema usa barras clássicas (Windows, Linux, Mac com mouse): next.js põe .sb-classic ao
+   medir que a barra ocupa espaço. Onde ela já flutua (celulares, Mac com trackpad), fica a do sistema. */
+html[data-skin="vidro"] { --sb-thumb: rgba(0, 0, 0, 0.32); --sb-thumb-hover: rgba(0, 0, 0, 0.5); }
+html[data-skin="vidro"][data-theme="dark"] { --sb-thumb: rgba(255, 255, 255, 0.3); --sb-thumb-hover: rgba(255, 255, 255, 0.5); }
+@media (prefers-color-scheme: dark) { html[data-skin="vidro"]:not([data-theme="light"]) { --sb-thumb: rgba(255, 255, 255, 0.3); --sb-thumb-hover: rgba(255, 255, 255, 0.5); } }
+html[data-skin="vidro"].sb-classic ::-webkit-scrollbar { width: 13px; height: 13px; background: transparent; }
+html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-track { background: transparent; margin: var(--sb-inset, 8px); }
+html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-thumb { background-color: transparent; background-clip: padding-box; border: 4px solid transparent; border-radius: 999px; min-height: 36px; min-width: 36px; }
+html[data-skin="vidro"].sb-classic .scrolling::-webkit-scrollbar-thumb { background-color: var(--sb-thumb); }
+html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-thumb:hover, html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-thumb:active { background-color: var(--sb-thumb-hover); border-width: 3px; }
+html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-button, html[data-skin="vidro"].sb-classic ::-webkit-scrollbar-corner { display: none; background: transparent; }
+/* Cantos arredondados: a barra começa e termina onde a curva acaba. */
+html[data-skin="vidro"] dialog { --sb-inset: 26px; }
+html[data-skin="vidro"] .pane { --sb-inset: 22px; }
+/* Firefox não tem as barras do WebKit: fio fino da mesma cor. */
+@supports not selector(::-webkit-scrollbar) { html[data-skin="vidro"] * { scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; } }
 
 /* ---------- botões: cápsulas ---------- */
 html[data-skin="vidro"] .btn { height: 36px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 590; letter-spacing: -0.015em; gap: 6px; transition: transform .18s var(--ease), background-color .15s, filter .15s, box-shadow .15s; }
@@ -361,6 +378,14 @@ html[data-skin="vidro"] .quota .qbar i { background: var(--accent); }
   html[data-skin="vidro"] .pane-feed { padding-inline: 8px; }
   html[data-skin="vidro"] .composer { padding-bottom: 6px; }
 }
+/* Com barra clássica, o espaço dela é sempre reservado e sai do respiro da direita: as margens ficam
+   iguais dos dois lados, e nada pula de lugar quando o conteúdo passa a rolar. */
+@container room (min-width: 1060px) {
+  html[data-skin="vidro"].sb-classic .pane-devices, html[data-skin="vidro"].sb-classic .pane-files { scrollbar-gutter: stable; }
+  html[data-skin="vidro"].sb-classic .pane-devices .pane-inner, html[data-skin="vidro"].sb-classic .pane-files .pane-inner { padding-right: 1px; }
+}
+html[data-skin="vidro"].sb-classic #feed { scrollbar-gutter: stable both-edges; }
+html[data-skin="vidro"].sb-classic dialog { scrollbar-gutter: stable; padding-right: 11px; }
 /* Telas médias: abas como controle segmentado. */
 @container room (min-width: 681px) and (max-width: 1059px) {
   html[data-skin="vidro"] .room-tabs { justify-content: center; padding-block: 2px 8px; }

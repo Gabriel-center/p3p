@@ -1,18 +1,18 @@
 // Controlador da interface: início, sala e histórico.
-import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611251905';
-import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611251905';
-import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611251905';
-import { RoomClient } from './room-client.js?v=202611251905';
-import { Mesh } from './mesh.js?v=202611251905';
-import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611251905';
-import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611251905';
-import { makeZip } from './zip.js?v=202611251905';
-import { Viewer } from './viewer.js?v=202611251905';
-import { CloudUpload, downloadUrl } from './cloud.js?v=202611251905';
-import { cleanupOld } from './storage.js?v=202611251905';
-import { SpeedMeter } from './speed.js?v=202611251905';
-import * as hist from './history.js?v=202611251905';
-import * as vault from './vault.js?v=202611251905';
+import { WORKER_URL, PAGE_URL, APP, KEY } from './config.js?v=202611252051';
+import { t, bytes, count, duration, time, dayLabel, countdown, LANG } from './i18n.js?v=202611252051';
+import { getMe, setMyName, randomId, randomRoomName, normalizeRoom, roomFromLocation, isHistoryRoute, load, save } from './device.js?v=202611252051';
+import { RoomClient } from './room-client.js?v=202611252051';
+import { Mesh } from './mesh.js?v=202611252051';
+import { Codec, Transfers, cleanBatch, cleanThumb, cleanMedia } from './transfer.js?v=202611252051';
+import { kindOf, clock, previewUrl, thumbsInOrder } from './media.js?v=202611252051';
+import { makeZip } from './zip.js?v=202611252051';
+import { Viewer } from './viewer.js?v=202611252051';
+import { CloudUpload, downloadUrl } from './cloud.js?v=202611252051';
+import { cleanupOld } from './storage.js?v=202611252051';
+import { SpeedMeter } from './speed.js?v=202611252051';
+import * as hist from './history.js?v=202611252051';
+import * as vault from './vault.js?v=202611252051';
 
 document.documentElement.lang = LANG === 'pt' ? 'pt-BR' : 'en';
 
@@ -67,7 +67,7 @@ const VIDRO = SKIN === 'vidro';
 // data-next no index.html: movimento, gestos, app instalável, atalhos e leitor de QR (assets/next.js).
 // Tudo isso mora em next.js e só é carregado nessa página.
 const NEXT = 'next' in document.documentElement.dataset;
-const nextMod = NEXT ? import('./next.js?v=202611251905') : null;
+const nextMod = NEXT ? import('./next.js?v=202611252051') : null;
 if (VIDRO) Object.assign(ICON, {
   send: svg('<path d="M12 18.5V6M6.5 11.5L12 6l5.5 5.5"/>'),
   clip: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
